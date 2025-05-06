@@ -39,7 +39,8 @@ export type Institution = {
     id: string;
     institution_id: string;
     start_date: string;
-    status: AgreementStatus;
+    end_date: string | null;
+    status: 'active' | 'finished';
     description: string;
     created_at: string;
     updated_at: string;
@@ -94,7 +95,12 @@ export type Institution = {
     action_description: string;
     created_at: string;
   };
-  
+  export interface SupabaseError extends Error {
+    message: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+  }
   export type Database = {
     public: {
       Tables: {
