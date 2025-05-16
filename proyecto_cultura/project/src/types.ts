@@ -60,6 +60,7 @@ export type Institution = {
     is_modifiable: boolean;
     created_at: string;
     updated_at: string;
+      rating: number | null;
   };
   
   export type ActivityParticipant = {

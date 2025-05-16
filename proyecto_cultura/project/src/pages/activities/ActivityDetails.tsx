@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Trash2, Calendar, Clock, User, Users, CheckCircle, AlertCircle, FilePlus, Download } from 'lucide-react';
+import { Edit2, Trash2, Calendar, Clock, User, Users, CheckCircle, AlertCircle, FilePlus, Download, Star } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { supabase } from '../../lib/supabase';
 import type { Activity, Agreement, Institution, Member, ActivityParticipant, Observation, Report } from '../../types';
 import ReportForm from './ReportForm';
+import RatingForm from './RatingForm';
+import StarRating from './StarRating';
 
 interface ActivityDetailsProps {
   activity: Activity & { 
@@ -26,6 +28,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   const [observations, setObservations] = useState<Observation[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
@@ -244,6 +247,49 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     }
   };
 
+  const handleRatingSubmit = async (
+    activityRating: number, 
+    participantRatings: { memberId: string, rating: number }[]
+  ) => {
+    try {
+      // Update the activity rating
+      const { error: updateActivityError } = await supabase
+        .from('activities')
+        .update({ rating: activityRating })
+        .eq('id', activity.id);
+      
+      if (updateActivityError) throw updateActivityError;
+      
+      // Update each participant's rating
+      const participantUpdates = participantRatings.map(async (p) => {
+        const { error: updatePartError } = await supabase
+          .from('activity_participants')
+          .update({ rating: p.rating })
+          .eq('activity_id', activity.id)
+          .eq('member_id', p.memberId);
+        
+        if (updatePartError) throw updatePartError;
+      });
+      
+      await Promise.all(participantUpdates);
+      
+      // Update local state
+      setParticipants(prev => prev.map(p => ({
+        ...p,
+        rating: participantRatings.find(r => r.memberId === p.member_id)?.rating || p.rating
+      })));
+      
+      // Close the modal
+      setIsRatingModalOpen(false);
+      
+      // Refresh the data to show updated ratings
+      fetchRelatedData();
+    } catch (err) {
+      const error = err as Error;
+      setError('Error al guardar las calificaciones: ' + error.message);
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch(status) {
       case 'finalizado':
@@ -295,6 +341,9 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         return 'text-blue-700 bg-blue-100';
     }
   };
+
+  // Check if any participants have ratings
+  const hasParticipantRatings = participants.some(p => p.rating !== null && p.rating > 0);
 
   if (isLoading) {
     return (
@@ -393,6 +442,17 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Mostrar calificación general de la actividad si existe */}
+              {activity.rating !== null && activity.rating > 0 && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Star className="h-5 w-5 text-yellow-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">Calificación General</p>
+                    <StarRating initialRating={activity.rating} onChange={() => {}} readOnly size="sm" />
+                  </div>
+                </div>
+              )}
             </div>
             
             <h3 className="font-medium text-gray-900 mt-6 mb-3 pb-2 border-b">Descripción</h3>
@@ -426,6 +486,15 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
             <div className="mb-6">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-medium text-gray-900 pb-2 border-b w-full">Aliados ({participants.length})</h3>
+                {activity.status === 'finalizado' && (
+                  <button
+                    onClick={() => setIsRatingModalOpen(true)}
+                    className="flex items-center gap-1 ml-2 px-3 py-1.5 text-sm bg-yellow-50 text-yellow-700 rounded-md hover:bg-yellow-100 transition-colors"
+                  >
+                    <Star className="h-4 w-4" />
+                    {hasParticipantRatings ? 'Editar Calificaciones' : 'Calificar'}
+                  </button>
+                )}
               </div>
               
               {participants.length === 0 ? (
@@ -454,9 +523,16 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
                             <p className="text-xs text-gray-500">{participant.member.institution_id}</p>
                           </div>
                         </div>
-                        <span className="text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded">
-                          {participant.role}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {participant.rating !== null && participant.rating > 0 && (
+                            <div className="mr-2">
+                              <StarRating initialRating={participant.rating} onChange={() => {}} readOnly size="sm" />
+                            </div>
+                          )}
+                          <span className="text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                            {participant.role}
+                          </span>
+                        </div>
                       </div>
                     )
                   ))}
@@ -561,6 +637,17 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
             onSubmit={handleReportSubmit}
             onCancel={() => setIsReportModalOpen(false)}
             isEditing={!!report}
+          />
+        </div>
+      )}
+
+      {isRatingModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <RatingForm
+            activity={activity}
+            participants={participants}
+            onSubmit={handleRatingSubmit}
+            onCancel={() => setIsRatingModalOpen(false)}
           />
         </div>
       )}
