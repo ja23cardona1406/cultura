@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Upload, Plus, Clock, AlertCircle, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Upload, Plus, Clock, AlertCircle, Calendar, Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getActivitiesForDay } from '../../utils/dateUtils';
 import type { Agreement, Institution, Member, Activity, ActivityParticipant } from '../../types';
@@ -38,7 +38,9 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [agreements, setAgreements] = useState<(Agreement & { institution?: Institution })[]>([]);
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [selectedAgreement, setSelectedAgreement] = useState<(Agreement & { institution?: Institution }) | null>(null);
+  const [selectedInstitution, setSelectedInstitution] = useState<Institution | null>(null);
   const [participants, setParticipants] = useState<ActivityParticipant[]>([]);
   const [observations, setObservations] = useState<{ 
     title: string; 
@@ -60,6 +62,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     image_file: null as File | null,
   });
 
+  const [useAgreement, setUseAgreement] = useState<boolean>(!!agreementId || (!!activity?.agreement_id));
   const [imagePreview, setImagePreview] = useState<string | null>(activity?.image_url || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -69,7 +72,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   );
 
   useEffect(() => {
-    fetchAgreements();
+    fetchAgreementsAndInstitutions();
   }, []);
 
   useEffect(() => {
@@ -77,12 +80,18 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       const agreement = agreements.find(a => a.id === agreementId);
       if (agreement) {
         setSelectedAgreement(agreement);
+        setUseAgreement(true);
       }
     } else if (activity?.agreement_id) {
       const agreement = agreements.find(a => a.id === activity.agreement_id);
       if (agreement) {
         setSelectedAgreement(agreement);
+        setUseAgreement(true);
       }
+    } else if (activity && !activity.agreement_id && activity.agreement?.institution) {
+      // If activity has institution but no agreement
+      setSelectedInstitution(activity.agreement.institution);
+      setUseAgreement(false);
     }
   }, [agreements, agreementId, activity]);
 
@@ -99,9 +108,12 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     }
   }, [formData.scheduled_date]);
 
-  const fetchAgreements = async () => {
+  const fetchAgreementsAndInstitutions = async () => {
     try {
-      const { data, error: fetchError } = await supabase
+      setIsLoading(true);
+      
+      // Fetch agreements with institution details
+      const { data: agreementsData, error: agreementsError } = await supabase
         .from('agreements')
         .select(`
           *,
@@ -114,11 +126,20 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         .eq('status', 'active')
         .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
-      setAgreements(data || []);
+      if (agreementsError) throw agreementsError;
+      setAgreements(agreementsData || []);
+      
+      // Fetch all institutions
+      const { data: institutionsData, error: institutionsError } = await supabase
+        .from('institutions')
+        .select('*')
+        .order('name');
+      
+      if (institutionsError) throw institutionsError;
+      setInstitutions(institutionsData || []);
     } catch (err) {
       const error = err as Error;
-      setError('Error al cargar los convenios: ' + error.message);
+      setError('Error al cargar los datos: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -135,7 +156,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       setParticipants(data || []);
     } catch (err) {
       const error = err as Error;
-      setError('Error al cargar los alidos: ' + error.message);
+      setError('Error al cargar los aliados: ' + error.message);
     }
   };
 
@@ -233,6 +254,12 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     setSelectedAgreement(agreement || null);
   };
 
+  const handleInstitutionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const institutionId = e.target.value;
+    const institution = institutions.find(i => i.id === institutionId);
+    setSelectedInstitution(institution || null);
+  };
+
   const handleAddObservation = () => {
     setObservations([
       ...observations,
@@ -265,8 +292,14 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     setError('');
     setIsSubmitting(true);
     
-    if (!selectedAgreement) {
+    if (useAgreement && !selectedAgreement) {
       setError('Debe seleccionar un convenio');
+      setIsSubmitting(false);
+      return;
+    }
+    
+    if (!useAgreement && !selectedInstitution) {
+      setError('Debe seleccionar una institución');
       setIsSubmitting(false);
       return;
     }
@@ -283,7 +316,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         progress_percentage: formData.progress_percentage,
         image_url: formData.image_url,
         image_file: formData.image_file,
-        agreement_id: selectedAgreement.id,
+        agreement_id: useAgreement ? selectedAgreement!.id : '',
         participants,
         observations
       };
@@ -312,6 +345,12 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
+  
+  const toggleUseAgreement = () => {
+    setUseAgreement(!useAgreement);
+    setSelectedAgreement(null);
+    setSelectedInstitution(null);
   };
 
   if (isLoading) {
@@ -375,27 +414,81 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto pr-2">
         {currentStep === 1 && (
           <div className="space-y-4 animate-fadeIn">
-            <div>
-              <label htmlFor="agreement_id" className="block text-sm font-medium text-gray-700 mb-1">
-                Convenio *
-              </label>
-              <select
-                id="agreement_id"
-                name="agreement_id"
-                value={selectedAgreement?.id || ''}
-                onChange={handleAgreementChange}
-                disabled={!!agreementId || isEditing}
-                required
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">Selecciona un convenio</option>
-                {agreements.map(agreement => (
-                  <option key={agreement.id} value={agreement.id}>
-                    {agreement.institution?.name} - {new Date(agreement.start_date).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!isEditing && !agreementId && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium text-blue-700">Tipo de Actividad</span>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={useAgreement}
+                      onChange={() => setUseAgreement(true)}
+                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Con convenio</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={!useAgreement}
+                      onChange={() => setUseAgreement(false)}
+                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Sin convenio</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {useAgreement ? (
+              <div>
+                <label htmlFor="agreement_id" className="block text-sm font-medium text-gray-700 mb-1">
+                  Convenio *
+                </label>
+                <select
+                  id="agreement_id"
+                  name="agreement_id"
+                  value={selectedAgreement?.id || ''}
+                  onChange={handleAgreementChange}
+                  disabled={!!agreementId || isEditing}
+                  required={useAgreement}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  <option value="">Selecciona un convenio</option>
+                  {agreements.map(agreement => (
+                    <option key={agreement.id} value={agreement.id}>
+                      {agreement.institution?.name} - {new Date(agreement.start_date).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label htmlFor="institution_id" className="block text-sm font-medium text-gray-700 mb-1">
+                  Institución *
+                </label>
+                <select
+                  id="institution_id"
+                  name="institution_id"
+                  value={selectedInstitution?.id || ''}
+                  onChange={handleInstitutionChange}
+                  required={!useAgreement}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Selecciona una institución</option>
+                  {institutions.map(institution => (
+                    <option key={institution.id} value={institution.id}>
+                      {institution.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
@@ -621,15 +714,16 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
               </div>
             </div>
 
-            {selectedAgreement ? (
+            {(useAgreement && selectedAgreement) || (!useAgreement && selectedInstitution) ? (
               <ParticipantSelector
-                agreementId={selectedAgreement.id}
+                agreementId={useAgreement ? selectedAgreement!.id : (selectedInstitution!.id || '')}
                 initialParticipants={participants}
                 onChange={setParticipants}
+                useAgreement={useAgreement}
               />
             ) : (
               <div className="text-center py-8 text-gray-500">
-                Debe seleccionar un convenio para poder añadir Aliados
+                Debe seleccionar {useAgreement ? 'un convenio' : 'una institución'} para poder añadir Aliados
               </div>
             )}
           </div>

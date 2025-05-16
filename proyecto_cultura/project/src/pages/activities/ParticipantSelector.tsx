@@ -7,12 +7,14 @@ interface ParticipantSelectorProps {
   agreementId: string;
   initialParticipants?: ActivityParticipant[];
   onChange: (participants: ActivityParticipant[]) => void;
+  useAgreement?: boolean;
 }
 
 const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
   agreementId,
   initialParticipants = [],
-  onChange
+  onChange,
+  useAgreement = true
 }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [members, setMembers] = useState<(Member & { isSelected?: boolean })[]>([]);
@@ -24,7 +26,7 @@ const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
 
   useEffect(() => {
     fetchInstitutionsWithMembers();
-  }, [agreementId]);
+  }, [agreementId, useAgreement]);
 
   useEffect(() => {
     if (initialParticipants.length > 0 && members.length > 0) {
@@ -41,45 +43,74 @@ const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
     setError('');
     
     try {
-      // First, get the institution_id from the agreement
-      const { data: agreementData, error: agreementError } = await supabase
-        .from('agreements')
-        .select('institution_id')
-        .eq('id', agreementId)
-        .single();
+      if (useAgreement) {
+        // If using agreement, get institution from agreement
+        const { data: agreementData, error: agreementError } = await supabase
+          .from('agreements')
+          .select('institution_id')
+          .eq('id', agreementId)
+          .single();
 
-      if (agreementError) throw agreementError;
-      
-      if (!agreementData) {
-        throw new Error('No se encontró el convenio');
+        if (agreementError) throw agreementError;
+        
+        if (!agreementData) {
+          throw new Error('No se encontró el convenio');
+        }
+
+        // Fetch the primary institution
+        const { data: primaryInstitution, error: primaryError } = await supabase
+          .from('institutions')
+          .select('*')
+          .eq('id', agreementData.institution_id)
+          .single();
+
+        if (primaryError) throw primaryError;
+        
+        // Fetch all other institutions (for future multi-institution activities)
+        const { data: otherInstitutions, error: othersError } = await supabase
+          .from('institutions')
+          .select('*')
+          .neq('id', agreementData.institution_id)
+          .order('name');
+
+        if (othersError) throw othersError;
+        
+        // Combine institutions with primary first
+        const allInstitutions = [primaryInstitution, ...(otherInstitutions || [])];
+        setInstitutions(allInstitutions);
+        
+        // Default expand the primary institution
+        setExpandedInstitutions({
+          [primaryInstitution.id]: true
+        });
+      } else {
+        // If not using agreement, get institution directly
+        const { data: primaryInstitution, error: primaryError } = await supabase
+          .from('institutions')
+          .select('*')
+          .eq('id', agreementId)
+          .single();
+
+        if (primaryError) throw primaryError;
+        
+        // Fetch all other institutions
+        const { data: otherInstitutions, error: othersError } = await supabase
+          .from('institutions')
+          .select('*')
+          .neq('id', agreementId)
+          .order('name');
+
+        if (othersError) throw othersError;
+        
+        // Combine institutions with primary first
+        const allInstitutions = [primaryInstitution, ...(otherInstitutions || [])];
+        setInstitutions(allInstitutions);
+        
+        // Default expand the primary institution
+        setExpandedInstitutions({
+          [primaryInstitution.id]: true
+        });
       }
-
-      // Fetch the primary institution
-      const { data: primaryInstitution, error: primaryError } = await supabase
-        .from('institutions')
-        .select('*')
-        .eq('id', agreementData.institution_id)
-        .single();
-
-      if (primaryError) throw primaryError;
-      
-      // Fetch all other institutions (for future multi-institution activities)
-      const { data: otherInstitutions, error: othersError } = await supabase
-        .from('institutions')
-        .select('*')
-        .neq('id', agreementData.institution_id)
-        .order('name');
-
-      if (othersError) throw othersError;
-      
-      // Combine institutions with primary first
-      const allInstitutions = [primaryInstitution, ...(otherInstitutions || [])];
-      setInstitutions(allInstitutions);
-      
-      // Default expand the primary institution
-      setExpandedInstitutions({
-        [primaryInstitution.id]: true
-      });
       
       // Fetch members for all institutions
       const { data: allMembers, error: membersError } = await supabase
