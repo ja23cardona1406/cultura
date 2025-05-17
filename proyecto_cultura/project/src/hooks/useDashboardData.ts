@@ -81,14 +81,18 @@ export function useDashboardData() {
   const fetchActiveAgreements = async () => {
     try {
       const startDate = formatDateForSupabase(timeRange.startDate);
-      const endDate = formatDateForSupabase(timeRange.endDate);
       
-      const { count, error } = await supabase
+      // Modificado: La consulta ahora maneja correctamente los acuerdos activos
+      // que pueden tener un end_date nulo o una fecha posterior a la fecha actual
+      const { count, error, data } = await supabase
         .from('agreements')
-        .select('*', { count: 'exact', head: true })
+        .select('*', { count: 'exact' })
         .eq('status', 'active')
         .gte('start_date', startDate)
-        .lte('end_date', endDate);
+        .or(`end_date.is.null,end_date.gte.${startDate}`);
+
+      console.log('Active agreements query:', startDate);
+      console.log('Active agreements data:', data);
 
       if (error) throw error;
       return count || 0;
