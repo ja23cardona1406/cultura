@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Edit2, Trash2, Calendar, Clock, User, Users, CheckCircle, AlertCircle, FilePlus, Download, Star } from 'lucide-react';
+import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import { jsPDF } from 'jspdf';
 import { supabase } from '../../lib/supabase';
 import type { Activity, Agreement, Institution, Member, ActivityParticipant, Observation, Report } from '../../types';
@@ -24,6 +25,9 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   onDelete,
   isDeleting
 }) => {
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+
   const [participants, setParticipants] = useState<(ActivityParticipant & { member?: Member })[]>([]);
   const [observations, setObservations] = useState<Observation[]>([]);
   const [report, setReport] = useState<Report | null>(null);
@@ -46,9 +50,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       
       if (user) {
         setCurrentUser({ id: user.id });
-        console.log("Usuario actual:", user.id); // Para depuración
-      } else {
-        console.log("No hay usuario autenticado"); // Para depuración
       }
     } catch (err) {
       const error = err as Error;
@@ -62,12 +63,10 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     let yPosition = 20;
     const lineHeight = 7;
 
-    // Title
     doc.setFontSize(20);
     doc.text('Informe de Actividad', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += lineHeight * 2;
 
-    // Activity Details
     doc.setFontSize(14);
     doc.text('Detalles de la Actividad', 20, yPosition);
     yPosition += lineHeight;
@@ -80,13 +79,11 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     doc.text(`Fecha: ${new Date(activity.scheduled_date).toLocaleDateString()}`, 20, yPosition);
     yPosition += lineHeight * 2;
 
-    // Report Summary
     doc.setFontSize(14);
     doc.text('Resumen del Informe', 20, yPosition);
     yPosition += lineHeight;
 
     doc.setFontSize(12);
-    // Split long text into multiple lines
     const splitSummary = doc.splitTextToSize(reportData.general_summary, pageWidth - 40);
     doc.text(splitSummary, 20, yPosition);
     yPosition += (splitSummary.length * lineHeight) + lineHeight;
@@ -94,7 +91,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     doc.text(`Personas Impactadas: ${reportData.people_impacted}`, 20, yPosition);
     yPosition += lineHeight * 2;
 
-    // Participants
     if (participants.length > 0) {
       doc.setFontSize(14);
       doc.text('Participantes', 20, yPosition);
@@ -109,7 +105,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       });
     }
 
-    // Save the PDF
     doc.save(`informe-${activity.title.toLowerCase().replace(/\s+/g, '-')}.pdf`);
   };
 
@@ -117,7 +112,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     try {
       setIsLoading(true);
       
-      // Fetch participants with member details
       const { data: participantsData, error: participantsError } = await supabase
         .from('activity_participants')
         .select(`
@@ -128,7 +122,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       
       if (participantsError) throw participantsError;
       
-      // Fetch observations
       const { data: observationsData, error: observationsError } = await supabase
         .from('observations')
         .select('*')
@@ -137,7 +130,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       
       if (observationsError) throw observationsError;
       
-      // Fetch report if exists
       const { data: reportData, error: reportError } = await supabase
         .from('reports')
         .select('*')
@@ -162,7 +154,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     people_impacted: number;
   }) => {
     try {
-      // Obtén el usuario actual directamente para asegurar que tenemos los datos más recientes
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
       if (authError) {
@@ -173,18 +164,14 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         throw new Error('No hay usuario autenticado. Por favor, inicia sesión nuevamente.');
       }
       
-      console.log('Usuario autenticado para el reporte:', user.id); // Depuración
-      
       let savedReport: Report;
 
       if (report) {
-        // Update existing report - no es necesario actualizar generated_by
         const { data, error: updateError } = await supabase
           .from('reports')
           .update({
             general_summary: formData.general_summary,
             people_impacted: formData.people_impacted,
-            // No actualizamos generated_by en una actualización
           })
           .eq('id', report.id)
           .select()
@@ -198,26 +185,22 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         savedReport = data;
         setReport(data);
       } else {
-        // Verifica primero si el usuario tiene acceso a la tabla users o profiles
-        // Importante: Esta verificación depende de tu estructura de base de datos
         const { count, error: checkError } = await supabase
-          .from('profiles') // Cambia esto a la tabla donde debería existir el usuario
+          .from('profiles')
           .select('*', { count: 'exact', head: true })
           .eq('id', user.id);
         
         if (checkError) {
           console.warn('Advertencia: No se pudo verificar si el usuario existe en profiles:', checkError.message);
-          // Continúa de todos modos, ya que el error podría ser por permisos RLS
         }
         
-        // Create new report
         const { data, error: insertError } = await supabase
           .from('reports')
           .insert([{
             activity_id: activity.id,
             general_summary: formData.general_summary,
             people_impacted: formData.people_impacted,
-            generated_by: user.id, // Usa directamente el ID del usuario autenticado
+            generated_by: user.id,
           }])
           .select()
           .single();
@@ -225,7 +208,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         if (insertError) {
           console.error('Error detallado al insertar:', insertError);
           
-          // Si el error es de clave foránea, podría ser que necesitemos insertar el usuario en profiles primero
           if (insertError.message.includes('violates foreign key constraint')) {
             throw new Error('Tu usuario no está correctamente vinculado en el sistema. Por favor, contacta al administrador o verifica tu cuenta.');
           }
@@ -237,7 +219,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         setReport(data);
       }
       
-      // Generate and download PDF
       generatePDF(savedReport);
       setIsReportModalOpen(false);
     } catch (err) {
@@ -252,7 +233,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     participantRatings: { memberId: string, rating: number }[]
   ) => {
     try {
-      // Update the activity rating
       const { error: updateActivityError } = await supabase
         .from('activities')
         .update({ rating: activityRating })
@@ -260,7 +240,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       
       if (updateActivityError) throw updateActivityError;
       
-      // Update each participant's rating
       const participantUpdates = participantRatings.map(async (p) => {
         const { error: updatePartError } = await supabase
           .from('activity_participants')
@@ -273,16 +252,13 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       
       await Promise.all(participantUpdates);
       
-      // Update local state
       setParticipants(prev => prev.map(p => ({
         ...p,
         rating: participantRatings.find(r => r.memberId === p.member_id)?.rating || p.rating
       })));
       
-      // Close the modal
       setIsRatingModalOpen(false);
       
-      // Refresh the data to show updated ratings
       fetchRelatedData();
     } catch (err) {
       const error = err as Error;
@@ -342,7 +318,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     }
   };
 
-  // Check if any participants have ratings
   const hasParticipantRatings = participants.some(p => p.rating !== null && p.rating > 0);
 
   if (isLoading) {
@@ -353,11 +328,10 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     );
   }
 
-  // Verifica si el usuario está autenticado antes de mostrar el botón de informe
   const canGenerateReport = !!currentUser;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={`p-6 space-y-6 ${isMobile ? 'px-4' : ''}`}>
       {error && (
         <div className="p-4 bg-red-100 text-red-700 rounded-md">
           {error}
@@ -365,10 +339,10 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       )}
 
       <div className="bg-white rounded-lg p-6">
-        <div className="flex justify-between items-start mb-6">
+        <div className={`flex ${isMobile ? 'flex-col gap-4' : 'justify-between items-start'} mb-6`}>
           <div>
             <div className="flex items-center gap-3">
-              <h2 className="text-xl font-semibold">{activity.title}</h2>
+              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-semibold`}>{activity.title}</h2>
               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(activity.status)}`}>
                 {getStatusIcon(activity.status)}
                 <span>{getStatusText(activity.status)}</span>
@@ -376,10 +350,10 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
             </div>
             <p className="text-gray-600">{activity.activity_type}</p>
           </div>
-          <div className="flex gap-2">
+          <div className={`flex gap-2 ${isMobile ? 'w-full' : ''}`}>
             <button
               onClick={onEdit}
-              className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200"
+              className={`flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200 ${isMobile ? 'flex-1' : ''}`}
               disabled={!activity.is_modifiable}
             >
               <Edit2 className="h-4 w-4" />
@@ -388,7 +362,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
             <button
               onClick={onDelete}
               disabled={isDeleting}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${isMobile ? 'flex-1' : ''}`}
             >
               <Trash2 className="h-4 w-4" />
               Eliminar
@@ -406,7 +380,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className={`grid ${isMobile ? 'grid-cols-1 gap-6' : 'grid-cols-1 md:grid-cols-2 gap-6'}`}>
           <div>
             <h3 className="font-medium text-gray-900 mb-3 pb-2 border-b">Información de la Actividad</h3>
             <div className="space-y-4">
@@ -443,7 +417,6 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
                 </div>
               )}
 
-              {/* Mostrar calificación general de la actividad si existe */}
               {activity.rating !== null && activity.rating > 0 && (
                 <div className="flex items-center gap-2 text-gray-600">
                   <Star className="h-5 w-5 text-yellow-400" />

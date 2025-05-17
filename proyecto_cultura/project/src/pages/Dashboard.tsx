@@ -10,9 +10,14 @@ import { PieChart } from './dashboard/charts/PieChart';
 import { CompositeChart } from './dashboard/charts/CompositeChart';
 import { MemberRatingsTable } from './dashboard/MemberRatingsTable';
 import { useDashboardData } from '../hooks/useDashboardData';
+import { useIsMobile, useIsTablet, useIsDesktop } from '../hooks/useMediaQuery';
 
 export function Dashboard() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isDesktop = useIsDesktop();
+  
   const { 
     stats,
     recentActivities,
@@ -39,16 +44,16 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={`space-y-6 ${isMobile ? 'p-3' : 'p-6'}`}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold text-gray-900 mb-4 sm:mb-0">
-          Bienvenido, {user?.email || 'Usuario'}
+          Bienvenido, {user?.full_name || 'Usuario'}
         </h1>
         
-        <div className="flex space-x-3">
+        <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'space-x-3'}`}>
           <button 
             onClick={handleRefresh} 
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+            className={`inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none ${isMobile ? 'w-full justify-center' : ''}`}
           >
             <RefreshCw size={16} className="mr-2" />
             Actualizar
@@ -74,7 +79,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-4 ${isMobile ? '' : 'sm:grid-cols-2 lg:grid-cols-4 gap-6'}`}>
         <StatCard 
           title="Convenios Activos" 
           value={stats.activeAgreements} 
@@ -105,7 +110,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 ${isMobile ? 'gap-4' : 'gap-6 lg:grid-cols-2'}`}>
         <ActivityList 
           activities={recentActivities} 
           loading={loading} 
@@ -118,7 +123,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 ${isMobile ? 'gap-4' : 'gap-6 lg:grid-cols-2'}`}>
         <LineChart 
           data={chartData.activitiesByMonth} 
           lines={[
@@ -138,7 +143,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 ${isMobile ? 'gap-4' : 'gap-6 lg:grid-cols-2'}`}>
         <PieChart 
           data={chartData.activitiesByType} 
           colors={pieChartColors}

@@ -1,0 +1,92 @@
+/* Additional responsive utilities */
+@layer utilities {
+  .responsive-padding {
+    @apply px-4 py-4 sm:px-6 md:px-8;
+  }
+  
+  .responsive-container {
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  
+  .responsive-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6;
+  }
+  
+  .responsive-flex {
+    @apply flex flex-col sm:flex-row items-start sm:items-center;
+  }
+  
+  .responsive-heading {
+    @apply text-xl sm:text-2xl lg:text-3xl font-semibold;
+  }
+  
+  .responsive-subheading {
+    @apply text-lg sm:text-xl font-medium;
+  }
+  
+  .responsive-text {
+    @apply text-sm sm:text-base;
+  }
+  
+  .responsive-button {
+    @apply px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base rounded-md;
+  }
+  
+  .modal-width-responsive {
+    @apply w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl;
+  }
+  
+  .show-on-mobile {
+    @apply block sm:hidden;
+  }
+  
+  .hide-on-mobile {
+    @apply hidden sm:block;
+  }
+  
+  .show-on-tablet {
+    @apply hidden sm:block md:hidden;
+  }
+  
+  .show-on-desktop {
+    @apply hidden md:block;
+  }
+}
+
+/* Touch-friendly adjustments for mobile */
+@media (max-width: 640px) {
+  button, 
+  [role="button"],
+  a,
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  input, 
+  select, 
+  textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* Animations for responsive transitions */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

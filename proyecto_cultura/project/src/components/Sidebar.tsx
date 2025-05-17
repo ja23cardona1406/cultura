@@ -73,14 +73,14 @@ const Sidebar: React.FC = () => {
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-full overflow-hidden bg-gray-300">
             <img
-              alt="Profile"
-              src="/api/placeholder/40/40"
-              className="h-full w-full object-cover"
+                alt="Profile"
+        src={user?.avatar_url || "/api/placeholder/40/40"}
+        className="h-full w-full object-cover"
             />
           </div>
           <div className="overflow-hidden">
-            <h2 className="font-semibold text-sm text-gray-800 truncate">{user?.email || 'Usuario'}</h2>
-            <p className="text-xs text-gray-500">Admin</p>
+            <h2 className="font-semibold text-sm text-gray-800 truncate">{user?.full_name || 'Usuario'}</h2>
+            <p className="text-xs text-gray-500">{user?.role || 'viewer'}</p>
           </div>
         </div>
       </div>

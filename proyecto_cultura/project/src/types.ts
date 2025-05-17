@@ -15,8 +15,11 @@ export type ActivityStatus =  'en_proceso' | 'finalizado' | 'cancelado';
 export type User = {
   id: string;
   email: string;
-  role: 'admin' | 'viewer';
+  full_name: string;
+  role: UserRole;
+  avatar_url: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 export type Institution = {

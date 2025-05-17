@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import type { Agreement, Institution } from '../types';
 import AgreementForm from './agreements/AgreementForm';
 import AgreementDetails from './agreements/AgreementDetails';
+import { useIsMobile, useIsTablet, useIsDesktop } from '../hooks/useMediaQuery';
 
 export function Agreements() {
   const [agreements, setAgreements] = useState<(Agreement & { institution?: Institution })[]>([]);
@@ -14,6 +15,11 @@ export function Agreements() {
   const [isDetailsView, setIsDetailsView] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Responsive design hooks
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isDesktop = useIsDesktop();
 
   useEffect(() => {
     fetchAgreements();
@@ -154,7 +160,7 @@ export function Agreements() {
   // Agreement Details View
   if (isDetailsView && selectedAgreement) {
     return (
-      <div className="p-6">
+      <div className={`p-${isMobile ? '3' : '6'}`}>
         {isModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <AgreementForm
@@ -188,15 +194,15 @@ export function Agreements() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={`space-y-${isMobile ? '4' : '6'} p-${isMobile ? '3' : '6'}`}>
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold text-gray-900">Convenios</h1>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
+          className={`flex items-center gap-2 px-${isMobile ? '3' : '4'} py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200`}
         >
-          <Plus className="h-4 w-4" />
-          Nuevo Convenio
+          <Plus className={`h-${isMobile ? '3' : '4'} w-${isMobile ? '3' : '4'}`} />
+          {isMobile ? 'Nuevo' : 'Nuevo Convenio'}
         </button>
       </div>
 
@@ -222,7 +228,9 @@ export function Agreements() {
               </div>
             ) : (
               agreements.map((agreement) => (
-                <div key={agreement.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200">
+                <div key={agreement.id} 
+                  className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
+                >
                   <div className="flex items-center">
                     <FileText className="h-5 w-5 text-gray-500 mr-3" />
                     <div>
@@ -233,7 +241,7 @@ export function Agreements() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                       agreement.status === 'active' 
                         ? 'text-green-700 bg-green-100' 
@@ -246,15 +254,15 @@ export function Agreements() {
                         setSelectedAgreement(agreement);
                         setIsDetailsView(true);
                       }}
-                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
                     >
                       <Eye className="h-4 w-4" />
-                      Ver Detalles
+                      {!isMobile && 'Ver Detalles'}
                     </button>
                     <button
                       onClick={() => handleDeleteAgreement(agreement.id)}
                       disabled={isDeleting}
-                      className="flex items-center gap-1 text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

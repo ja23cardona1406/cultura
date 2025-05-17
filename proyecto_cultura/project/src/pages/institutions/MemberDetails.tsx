@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, Edit2, Trash2 } from 'lucide-react';
 import type { Member } from '../../types';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 interface MemberDetailsProps {
   member: Member;
@@ -17,8 +18,10 @@ const MemberDetails: React.FC<MemberDetailsProps> = ({
   onDelete,
   isDeleting
 }) => {
+  const isMobile = useIsMobile();
+
   return (
-    <div className="space-y-6">
+    <div className={`space-y-${isMobile ? '4' : '6'}`}>
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={onBack}
@@ -32,59 +35,63 @@ const MemberDetails: React.FC<MemberDetailsProps> = ({
         </h1>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6 animate-fadeIn">
-        <div className="flex justify-between items-start mb-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div className="flex items-center gap-4">
             {member.avatar_url ? (
               <img
                 src={member.avatar_url}
                 alt={member.full_name}
-                className="w-24 h-24 object-cover rounded-full shadow-sm"
+                className="w-16 h-16 object-cover rounded-full"
               />
             ) : (
-              <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-2xl">
-                {member.full_name.charAt(0)}
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                <span className="text-blue-600 font-medium text-xl">
+                  {member.full_name.charAt(0)}
+                </span>
               </div>
             )}
             <div>
-              <h2 className="text-xl font-semibold">{member.full_name}</h2>
-              <p className="text-gray-600">{member.role}</p>
+              <h2 className="text-xl font-semibold text-gray-900">{member.full_name}</h2>
+              <p className="text-sm text-gray-500">{member.role}</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button
               onClick={onEdit}
-              className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200"
+              className="flex items-center gap-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200"
             >
               <Edit2 className="h-4 w-4" />
-              Editar
+              {!isMobile && 'Editar'}
             </button>
             <button
               onClick={onDelete}
               disabled={isDeleting}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Trash2 className="h-4 w-4" />
-              Eliminar
+              {!isMobile && 'Eliminar'}
             </button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h3 className="font-medium text-gray-900 mb-3 pb-2 border-b">Información de Contacto</h3>
+            <h3 className="font-medium text-gray-900 mb-4 pb-2 border-b">
+              Información de Contacto
+            </h3>
             <div className="space-y-3">
-              <p className="text-gray-600 flex flex-col">
-                <span className="text-sm text-gray-500">Email:</span>
-                <span>{member.email}</span>
+              <p className="text-gray-600">
+                <span className="text-sm text-gray-500 block">Email:</span>
+                {member.email}
               </p>
-              <p className="text-gray-600 flex flex-col">
-                <span className="text-sm text-gray-500">Teléfono:</span>
-                <span>{member.phone || 'No especificado'}</span>
+              <p className="text-gray-600">
+                <span className="text-sm text-gray-500 block">Teléfono:</span>
+                {member.phone || 'No especificado'}
               </p>
-              <p className="text-gray-600 flex flex-col">
-                <span className="text-sm text-gray-500">Departamento:</span>
-                <span>{member.department || 'No especificado'}</span>
+              <p className="text-gray-600">
+                <span className="text-sm text-gray-500 block">Departamento:</span>
+                {member.department || 'No especificado'}
               </p>
             </div>
           </div>

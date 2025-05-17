@@ -10,6 +10,7 @@ import ConflictWarning from './activities/ConflictWarning';
 import DateRangePicker from './activities/DateRangePicker';
 import { format } from 'date-fns';
 import { generateActivityReport } from '../utils/reportGenerator';
+import { useIsMobile, useIsTablet, useIsDesktop } from '../hooks/useMediaQuery';
 
 interface ActivityListProps {
   agreementId?: string;
@@ -48,6 +49,11 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   // Refs
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // Responsive design hooks
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isDesktop = useIsDesktop();
+
   useEffect(() => {
     fetchActivities();
   }, [agreementId]);
@@ -74,7 +80,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         `)
         .order('scheduled_date', { ascending: false });
       
-      // If agreementId is provided, filter by it
       if (agreementId) {
         query = query.eq('agreement_id', agreementId);
       }
@@ -95,7 +100,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   const applyFilters = () => {
     let filtered = [...activities];
     
-    // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(activity => 
         activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,14 +108,11 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
       );
     }
     
-    // Apply status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(activity => activity.status === statusFilter);
     }
     
-    // Apply date range filter
     if (startDate && endDate) {
-      // Create dates with time set to start and end of day to ensure inclusive range
       const startDateWithTime = new Date(startDate);
       startDateWithTime.setHours(0, 0, 0, 0);
       
@@ -147,7 +148,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     setError('');
 
     try {
-      // First delete related observations
       const { error: obsError } = await supabase
         .from('observations')
         .delete()
@@ -155,7 +155,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
       
       if (obsError) throw obsError;
       
-      // Then delete related participants
       const { error: partError } = await supabase
         .from('activity_participants')
         .delete()
@@ -163,7 +162,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
       
       if (partError) throw partError;
       
-      // Finally delete the activity
       const { error: deleteError } = await supabase
         .from('activities')
         .delete()
@@ -186,17 +184,14 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   };
 
   const checkForTimeConflicts = (formData: any) => {
-    // Combine date and time for scheduled_date
     const dateTime = new Date(`${formData.scheduled_date}T${formData.scheduled_time}`);
     
-    // Check for conflicts
     const conflicts = checkTimeConflicts(
       dateTime.toISOString(),
       activities.filter(a => isEditing ? a.id !== selectedActivity?.id : true)
     );
     
     if (conflicts.length > 0) {
-      // Store form data for later submission if user decides to proceed
       setPendingFormData(formData);
       setConflictingActivities(conflicts);
       setIsConflictWarningOpen(true);
@@ -206,38 +201,12 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     return false;
   };
 
-  const handleActivitySubmit = async (formData: {
-    title: string;
-    activity_type: string;
-    scheduled_date: string;
-    scheduled_time: string;
-    description: string;
-    attendee_count: number;
-    status: 'en_proceso' | 'finalizado' | 'cancelado';
-    progress_percentage: number;
-    image_url: string;
-    image_file: File | null;
-    agreement_id: string;
-    participants: {
-      activity_id: string;
-      member_id: string;
-      rating: number | null;
-      role: string;
-      created_at: string;
-    }[];
-    observations: {
-      title: string;
-      description: string;
-      activity_type: string;
-    }[];
-  }) => {
-    // Check for time conflicts
+  const handleActivitySubmit = async (formData: any) => {
     const hasConflicts = checkForTimeConflicts(formData);
     if (hasConflicts) {
       return;
     }
     
-    // If no conflicts, proceed with activity submission
     await submitActivityToDatabase(formData);
   };
 
@@ -251,18 +220,14 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
   const cancelConflictingSubmission = () => {
     setIsConflictWarningOpen(false);
-    // Don't clear pendingFormData so the form still has the values
-    // Just close the warning modal so user can adjust the time
   };
 
   const submitActivityToDatabase = async (formData: any) => {
     setError('');
 
     try {
-      // Combine date and time for scheduled_date
       const dateTime = new Date(`${formData.scheduled_date}T${formData.scheduled_time}`);
       
-      // Handle image upload if provided
       let finalImageUrl = formData.image_url;
       
       if (formData.image_file) {
@@ -282,7 +247,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
       }
       
       if (isEditing && selectedActivity) {
-        // Update existing activity logic...
         const { data: updatedActivity, error: updateError } = await supabase
           .from('activities')
           .update({
@@ -313,7 +277,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
         if (updateError) throw updateError;
         
-        // Delete existing participants and add new ones
         const { error: deletePartError } = await supabase
           .from('activity_participants')
           .delete()
@@ -321,7 +284,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         
         if (deletePartError) throw deletePartError;
         
-        // Add updated participants
         if (formData.participants.length > 0) {
           const { error: addPartError } = await supabase
             .from('activity_participants')
@@ -335,7 +297,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
           if (addPartError) throw addPartError;
         }
         
-        // Delete existing observations and add new ones
         const { error: deleteObsError } = await supabase
           .from('observations')
           .delete()
@@ -343,7 +304,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         
         if (deleteObsError) throw deleteObsError;
         
-        // Add updated observations
         if (formData.observations.length > 0) {
           const { error: addObsError } = await supabase
             .from('observations')
@@ -364,7 +324,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         
         setSelectedActivity(updatedActivity);
       } else {
-        // Create new activity
         const { data: newActivity, error: insertError } = await supabase
           .from('activities')
           .insert([{
@@ -394,7 +353,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
         if (insertError) throw insertError;
         
-        // Add participants if any
         if (formData.participants.length > 0) {
           const { error: partError } = await supabase
             .from('activity_participants')
@@ -408,7 +366,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
           if (partError) throw partError;
         }
         
-        // Add observations if any
         if (formData.observations.length > 0) {
           const { error: obsError } = await supabase
             .from('observations')
@@ -501,10 +458,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     );
   }
 
-  // Activity Details View
   if (isDetailsView && selectedActivity) {
     return (
-      <div className="p-6">
+      <div className={`p-${isMobile ? '3' : '6'}`}>
         {isModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <ActivityForm
@@ -519,7 +475,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
           </div>
         )}
         
-        <div className="flex items-center gap-4 mb-6">
+        <div className={`flex items-center gap-${isMobile ? '2' : '4'} mb-${isMobile ? '4' : '6'}`}>
           <button
             onClick={() => {
               setIsDetailsView(false);
@@ -530,7 +486,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
           >
             <ChevronDown className="h-5 w-5" />
           </button>
-          <h1 className="text-2xl font-semibold">Detalles de la Actividad</h1>
+          <h1 className={`text-${isMobile ? 'xl' : '2xl'} font-semibold`}>Detalles de la Actividad</h1>
         </div>
         
         <ActivityDetails
@@ -552,43 +508,45 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex justify-between items-center">
+    <div className={`space-y-${isMobile ? '4' : '6'} p-${isMobile ? '3' : '6'}`}>
+      <div className={`flex ${isMobile ? 'flex-col gap-3' : 'justify-between items-center'}`}>
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Actividades</h1>
+          <h1 className={`text-${isMobile ? 'xl' : '2xl'} font-semibold text-gray-900`}>Actividades</h1>
           {agreementId && (
             <p className="text-gray-500 text-sm">
               Mostrando actividades para el convenio seleccionado
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="bg-gray-100 p-1 rounded-md flex">
+        <div className={`flex ${isMobile ? 'flex-col w-full' : 'items-center'} gap-2`}>
+          <div className={`bg-gray-100 p-1 rounded-md flex ${isMobile ? 'w-full' : ''}`}>
             <button
               onClick={() => setViewMode('list')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors ${
                 viewMode === 'list' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-              }`}
+              } ${isMobile ? 'flex-1 justify-center' : ''}`}
             >
               <List className="h-4 w-4" />
-              <span className="hidden sm:inline">Lista</span>
+              <span className={isMobile ? '' : 'hidden sm:inline'}>Lista</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors ${
                 viewMode === 'calendar' ? 'bg-white shadow-sm' : 'hover:bg-gray-200'
-              }`}
+              } ${isMobile ? 'flex-1 justify-center' : ''}`}
             >
               <CalendarDays className="h-4 w-4" />
-              <span className="hidden sm:inline">Calendario</span>
+              <span className={isMobile ? '' : 'hidden sm:inline'}>Calendario</span>
             </button>
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
+            className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 ${
+              isMobile ? 'w-full justify-center' : ''
+            }`}
           >
             <Plus className="h-4 w-4" />
-            Nueva Actividad
+            {isMobile ? 'Nueva' : 'Nueva Actividad'}
           </button>
         </div>
       </div>
@@ -606,8 +564,8 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         />
       ) : (
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="p-4 border-b">
-            <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className={`p-${isMobile ? '3' : '4'} border-b`}>
+            <div className={`flex flex-col ${isMobile ? 'gap-3' : 'md:flex-row md:items-center gap-4'}`}>
               <div className="relative flex-1">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Search className="h-5 w-5 text-gray-400" />
@@ -620,11 +578,13 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                   className="block w-full pl-10 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-2`}>
                 <select
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value as any)}
-                  className="w-full md:w-auto py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={`py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    isMobile ? 'w-full' : 'w-auto'
+                  }`}
                 >
                   <option value="all">Todos los estados</option>
                   <option value="en_proceso">En Proceso</option>
@@ -632,10 +592,12 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                   <option value="cancelado">Cancelado</option>
                 </select>
                 
-                <div className="relative w-full md:w-auto">
+                <div className={`relative ${isMobile ? 'w-full' : 'w-auto'}`}>
                   <button 
                     onClick={() => setIsDateRangePickerOpen(!isDateRangePickerOpen)}
-                    className={`flex items-center gap-2 px-3 py-2 text-sm ${startDate && endDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-gray-300'} border rounded-md hover:bg-gray-50 transition w-full md:w-auto justify-between`}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm ${
+                      startDate && endDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-gray-300'
+                    } border rounded-md hover:bg-gray-50 transition ${isMobile ? 'w-full' : 'w-auto'} justify-between`}
                   >
                     <div className="flex items-center gap-2">
                       <Filter className="h-4 w-4" />
@@ -662,7 +624,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                 
                 <button
                   onClick={generateReport}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition w-full md:w-auto justify-center"
+                  className={`flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition ${
+                    isMobile ? 'w-full justify-center' : 'w-auto'
+                  }`}
                 >
                   <Download className="h-4 w-4" />
                   <span>Generar Reporte</span>
@@ -671,7 +635,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             </div>
           </div>
 
-          <div className="p-6">
+          <div className={`p-${isMobile ? '3' : '6'}`}>
             <div className="space-y-4">
               {filteredActivities.length === 0 ? (
                 <div className="text-center py-8">
@@ -685,7 +649,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                           ? `No hay actividades con estado ${getStatusText(statusFilter)}`
                           : 'No hay actividades registradas'}
                   </p>
-                  <div className="flex flex-wrap justify-center gap-2">
+                  <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} justify-center gap-2`}>
                     {(startDate || endDate || searchTerm || statusFilter !== 'all') && (
                       <button 
                         onClick={() => {
@@ -694,7 +658,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                           setSearchTerm('');
                           setStatusFilter('all');
                         }}
-                        className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors duration-200 inline-flex items-center gap-2"
+                        className={`px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors duration-200 inline-flex items-center gap-2 ${
+                          isMobile ? 'w-full justify-center' : ''
+                        }`}
                       >
                         <Filter className="h-4 w-4" />
                         Limpiar Filtros
@@ -703,7 +669,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                     
                     <button 
                       onClick={() => setIsModalOpen(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2"
+                      className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2 ${
+                        isMobile ? 'w-full justify-center' : ''
+                      }`}
                     >
                       <Plus className="h-4 w-4" />
                       Agregar Actividad
@@ -716,9 +684,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                     key={activity.id} 
                     className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow duration-200"
                   >
-                    <div className="flex flex-col md:flex-row">
+                    <div className={`flex ${isMobile ? 'flex-col' : 'md:flex-row'}`}>
                       {activity.image_url && (
-                        <div className="md:w-48 h-48 md:h-auto">
+                        <div className={`${isMobile ? 'w-full h-48' : 'md:w-48 h-auto'}`}>
                           <img 
                             src={activity.image_url} 
                             alt={activity.title}
@@ -727,12 +695,14 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                         </div>
                       )}
                       <div className="flex-1 p-4">
-                        <div className="flex justify-between items-start mb-2">
+                        <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-start'} mb-2`}>
                           <div>
                             <h3 className="font-semibold text-lg">{activity.title}</h3>
                             <p className="text-sm text-gray-500">{activity.activity_type}</p>
                           </div>
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(activity.status)}`}>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            getStatusBadgeClass(activity.status)
+                          } ${isMobile ? 'self-start' : ''}`}>
                             {getStatusIcon(activity.status)}
                             <span>{getStatusText(activity.status)}</span>
                           </span>
@@ -740,7 +710,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                         
                         <p className="text-gray-600 mb-3 line-clamp-2">{activity.description}</p>
                         
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className={`flex ${isMobile ? 'flex-col gap-3' : 'sm:flex-row sm:items-center justify-between gap-2'}`}>
                           <div className="text-sm text-gray-500">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-4 w-4" />
@@ -762,13 +732,15 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                             )}
                           </div>
                           
-                          <div className="flex gap-2 self-end sm:self-auto">
+                          <div className={`flex gap-2 ${isMobile ? 'w-full' : 'self-end sm:self-auto'}`}>
                             <button 
                               onClick={() => {
                                 setSelectedActivity(activity);
                                 setIsDetailsView(true);
                               }}
-                              className="flex items-center gap-1 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200"
+                              className={`flex items-center gap-1 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200 ${
+                                isMobile ? 'flex-1 justify-center' : ''
+                              }`}
                             >
                               <Eye className="h-4 w-4" />
                               <span>Ver Detalles</span>
@@ -776,9 +748,12 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                             <button
                               onClick={() => handleDeleteActivity(activity.id)}
                               disabled={isDeleting}
-                              className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                isMobile ?  'flex-1 justify-center' : ''
+                              }`}
                             >
                               <Trash2 className="h-4 w-4" />
+                              {isMobile && <span>Eliminar</span>}
                             </button>
                           </div>
                         </div>
@@ -808,7 +783,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         </div>
       )}
 
-      {/* Activity Form Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <ActivityForm
@@ -824,7 +798,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         </div>
       )}
 
-      {/* Conflict Warning Modal */}
       {isConflictWarningOpen && pendingFormData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <ConflictWarning 
@@ -836,7 +809,6 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         </div>
       )}
 
-      {/* Activity Details Modal */}
       {isDetailsView && selectedActivity && (
         <div 
           ref={modalRef}

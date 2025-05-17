@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, Edit2, Trash2, Building2, Calendar, Clock } from 'lucide-react';
 import type { Agreement, Institution } from '../../types';
+import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 
 interface AgreementDetailsProps {
   agreement: Agreement & { institution?: Institution };
@@ -17,9 +18,12 @@ const AgreementDetails: React.FC<AgreementDetailsProps> = ({
   onDelete,
   isDeleting
 }) => {
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4 mb-6">
+      <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'} mb-6`}>
         <button
           onClick={onBack}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition-colors duration-200"
@@ -33,16 +37,16 @@ const AgreementDetails: React.FC<AgreementDetailsProps> = ({
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-start mb-6">
+        <div className={`${isMobile ? 'flex-col gap-4' : 'flex justify-between items-start'} mb-6`}>
           <div className="flex items-center gap-4">
             {agreement.institution?.logo_url ? (
               <img
                 src={agreement.institution.logo_url}
                 alt={agreement.institution.name}
-                className="w-16 h-16 object-cover rounded-lg"
+                className={`object-cover rounded-lg ${isMobile ? 'w-12 h-12' : 'w-16 h-16'}`}
               />
             ) : (
-              <Building2 className="w-16 h-16 text-gray-400" />
+              <Building2 className={`text-gray-400 ${isMobile ? 'w-12 h-12' : 'w-16 h-16'}`} />
             )}
             <div>
               <h2 className="text-xl font-semibold">{agreement.institution?.name}</h2>
@@ -55,7 +59,7 @@ const AgreementDetails: React.FC<AgreementDetailsProps> = ({
               </span>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className={`flex gap-2 ${isMobile ? 'mt-4' : ''}`}>
             <button
               onClick={onEdit}
               className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors duration-200"
@@ -74,7 +78,7 @@ const AgreementDetails: React.FC<AgreementDetailsProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className={`grid ${isMobile ? 'grid-cols-1 gap-6' : 'grid-cols-1 md:grid-cols-2 gap-6'}`}>
           <div>
             <h3 className="font-medium text-gray-900 mb-3 pb-2 border-b">Información del Convenio</h3>
             <div className="space-y-4">
