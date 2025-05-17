@@ -78,10 +78,10 @@ export function Institutions() {
       }
 
       const { data, error: fetchError } = await supabase
-        .from('institutions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+  .from('institutions')
+  .select('*')  // Selecciona todas las columnas
+  .order('created_at', { ascending: false });  // Ordena por la fecha de creación
+
 
       if (fetchError) {
         throw fetchError;
