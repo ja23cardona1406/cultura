@@ -1,28 +1,50 @@
 {
-  "name": "proyecto_cultura",
-  "version": "1.0.0",
+  "name": "dian-convenios",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
   "dependencies": {
-    "@ionic/react": "^6.7.5",
-    "@ionic/react-router": "^6.7.5",
-    "ionicons": "^6.0.0",
-    "proyecto_cultura": "file:",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "@fullcalendar/core": "^6.1.17",
+    "@fullcalendar/daygrid": "^6.1.17",
+    "@fullcalendar/interaction": "^6.1.17",
+    "@fullcalendar/react": "^6.1.17",
+    "@fullcalendar/timegrid": "^6.1.17",
+    "@ionic/react": "^7.7.3",
+    "@ionic/react-router": "^6.1.9",
+    "@supabase/supabase-js": "^2.39.7",
+    "date-fns": "^3.3.1",
+    "dian-convenios": "file:",
+    "history": "^5.3.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.344.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-router": "^5.3.4",
-    "react-router-dom": "^5.3.4",
-    "typescript": "^4.9.5"
+    "react-router-dom": "^6.30.0"
   },
   "devDependencies": {
-    "@types/react": "^18.0.37",
-    "@types/react-dom": "^18.0.11",
-    "@types/react-router": "^5.1.20",
-    "@types/react-router-dom": "^5.3.3"
-  },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "@eslint/js": "^9.9.1",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-router-dom": "^5.3.3",
+    "@types/recharts": "^2.0.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.18",
+    "eslint": "^9.9.1",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.11",
+    "globals": "^15.9.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.5.3",
+    "typescript-eslint": "^8.3.0",
+    "vite": "^5.4.2"
   }
 }
