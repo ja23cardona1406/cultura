@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronLeft, Edit2, Eye, Plus, Trash2 } from 'lucide-react';
-import type { Institution, Member } from '../../types';
+import type { Institution, Member, InstitutionType } from '../../types';
 import MemberCard from './MemberCard';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 
@@ -27,6 +27,21 @@ const InstitutionDetails: React.FC<InstitutionDetailsProps> = ({
 }) => {
   const isMobile = useIsMobile();
   
+  const getInstitutionTypeLabel = (type: InstitutionType | null): string => {
+  if (!type) return 'No especificado';
+
+  const typeLabels: Record<InstitutionType, string> = {
+    'NAF': 'NAF',
+    'Cultura de la contribución en la escuela': 'Cultura en la escuela',
+    'Presencia de territorios': 'Presencia en territorios',
+    'DIAN': 'DIAN',
+  };
+
+  // Retorna la etiqueta si existe, sino un valor por defecto
+  return typeLabels[type] ?? 'Tipo desconocido';
+};
+
+
   return (
     <div className={`space-y-${isMobile ? '4' : '6'}`}>
       <div className="flex items-center gap-4 mb-6">
@@ -61,6 +76,11 @@ const InstitutionDetails: React.FC<InstitutionDetailsProps> = ({
             <div>
               <h2 className="text-xl font-semibold text-gray-900">{institution.name}</h2>
               <p className="text-sm text-gray-500">NIT: {institution.nit}</p>
+              <div className="mt-1">
+                <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs">
+                  {getInstitutionTypeLabel(institution.type)}
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
@@ -95,6 +115,10 @@ const InstitutionDetails: React.FC<InstitutionDetailsProps> = ({
               <p className="text-gray-600">
                 <span className="text-sm text-gray-500 block">Dirección:</span>
                 {institution.address}
+              </p>
+              <p className="text-gray-600">
+                <span className="text-sm text-gray-500 block">Tipo de Institución:</span>
+                {getInstitutionTypeLabel(institution.type)}
               </p>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Eye, Trash2, Clock } from 'lucide-react';
+import { FileText, Plus, Eye, Trash2, Clock, File } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Agreement, Institution } from '../types';
 import AgreementForm from './agreements/AgreementForm';
@@ -50,8 +50,46 @@ export function Agreements() {
     }
   };
 
+// Función corregida para el componente Agreements
+const deleteAgreementPdfs = async (agreementData: Agreement) => {
+  try {
+    if (!agreementData.pruebas_convenio) return;
+    
+    const pdfs = JSON.parse(agreementData.pruebas_convenio);
+    if (!Array.isArray(pdfs)) return;
+
+    // Eliminar cada PDF del storage
+    for (const pdfUrl of pdfs) {
+      try {
+        const url = new URL(pdfUrl);
+        const pathSegments = url.pathname.split('/');
+        // Buscar el bucket 'documentos' ya que ahora guardamos ahí
+        const bucketIndex = pathSegments.findIndex(segment => 
+          segment === 'imagenes'
+        );
+        
+        if (bucketIndex !== -1) {
+          const filePath = pathSegments.slice(bucketIndex + 1).join('/');
+          
+          const { error: deleteError } = await supabase.storage
+            .from('imagenes')
+            .remove([filePath]);
+
+          if (deleteError) {
+            console.error('Error deleting PDF from storage:', deleteError);
+          }
+        }
+      } catch (err) {
+        console.error('Error processing PDF URL:', err);
+      }
+    }
+  } catch (err) {
+    console.error('Error deleting agreement PDFs:', err);
+  }
+};
+
   const handleDeleteAgreement = async (agreementId: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este convenio?')) {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este convenio? Esto también eliminará todos los documentos PDF asociados.')) {
       return;
     }
 
@@ -59,6 +97,15 @@ export function Agreements() {
     setError('');
 
     try {
+      // Obtener los datos del convenio antes de eliminarlo para acceder a los PDFs
+      const agreementToDelete = agreements.find(agreement => agreement.id === agreementId);
+      
+      if (agreementToDelete) {
+        // Eliminar PDFs del storage primero
+        await deleteAgreementPdfs(agreementToDelete);
+      }
+
+      // Eliminar el convenio de la base de datos
       const { error: deleteError } = await supabase
         .from('agreements')
         .delete()
@@ -85,6 +132,7 @@ export function Agreements() {
     start_date: string;
     end_date: string;
     description: string;
+    pruebas_convenio: string;
   }) => {
     setError('');
 
@@ -97,6 +145,7 @@ export function Agreements() {
             start_date: formData.start_date,
             end_date: formData.end_date,
             description: formData.description,
+            pruebas_convenio: formData.pruebas_convenio,
             updated_at: new Date().toISOString()
           })
           .eq('id', selectedAgreement.id)
@@ -124,6 +173,7 @@ export function Agreements() {
             start_date: formData.start_date,
             end_date: formData.end_date,
             description: formData.description,
+            pruebas_convenio: formData.pruebas_convenio,
             status: 'active'
           }])
           .select(`
@@ -146,6 +196,16 @@ export function Agreements() {
     } catch (err) {
       const error = err as Error;
       throw error;
+    }
+  };
+
+  const getPdfCount = (agreementData: Agreement) => {
+    try {
+      if (!agreementData.pruebas_convenio) return 0;
+      const pdfs = JSON.parse(agreementData.pruebas_convenio);
+      return Array.isArray(pdfs) ? pdfs.length : 0;
+    } catch (error) {
+      return 0;
     }
   };
 
@@ -227,48 +287,59 @@ export function Agreements() {
                 </button>
               </div>
             ) : (
-              agreements.map((agreement) => (
-                <div key={agreement.id} 
-                  className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
-                >
-                  <div className="flex items-center">
-                    <FileText className="h-5 w-5 text-gray-500 mr-3" />
-                    <div>
-                      <h3 className="font-medium text-gray-900">{agreement.institution?.name}</h3>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Clock className="h-4 w-4" />
-                        <span>Inicio: {new Date(agreement.start_date).toLocaleDateString()}</span>
+              agreements.map((agreement) => {
+                const pdfCount = getPdfCount(agreement);
+                return (
+                  <div key={agreement.id} 
+                    className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
+                  >
+                    <div className="flex items-center">
+                      <FileText className="h-5 w-5 text-gray-500 mr-3" />
+                      <div>
+                        <h3 className="font-medium text-gray-900">{agreement.institution?.name}</h3>
+                        <div className="flex items-center gap-4 text-sm text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" />
+                            <span>Inicio: {new Date(agreement.start_date).toLocaleDateString()}</span>
+                          </div>
+                          {pdfCount > 0 && (
+                            <div className="flex items-center gap-1">
+                              <File className="h-4 w-4" />
+                              <span>{pdfCount} documento{pdfCount !== 1 ? 's' : ''} PDF</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                    <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        agreement.status === 'active' 
+                          ? 'text-green-700 bg-green-100' 
+                          : 'text-red-700 bg-red-100'
+                      }`}>
+                        {agreement.status === 'active' ? 'Activo' : 'Finalizado'}
+                      </span>
+                      <button 
+                        onClick={() => {
+                          setSelectedAgreement(agreement);
+                          setIsDetailsView(true);
+                        }}
+                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        <Eye className="h-4 w-4" />
+                        {!isMobile && 'Ver Detalles'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAgreement(agreement.id)}
+                        disabled={isDeleting}
+                        className="flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      agreement.status === 'active' 
-                        ? 'text-green-700 bg-green-100' 
-                        : 'text-red-700 bg-red-100'
-                    }`}>
-                      {agreement.status === 'active' ? 'Activo' : 'Finalizado'}
-                    </span>
-                    <button 
-                      onClick={() => {
-                        setSelectedAgreement(agreement);
-                        setIsDetailsView(true);
-                      }}
-                      className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      <Eye className="h-4 w-4" />
-                      {!isMobile && 'Ver Detalles'}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteAgreement(agreement.id)}
-                      disabled={isDeleting}
-                      className="flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

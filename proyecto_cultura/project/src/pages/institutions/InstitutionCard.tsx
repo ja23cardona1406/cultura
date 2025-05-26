@@ -1,6 +1,6 @@
 import React from 'react';
 import { Building2, Eye, Trash2 } from 'lucide-react';
-import type { Institution } from '../../types';
+import type { Institution, InstitutionType } from '../../types';
 
 interface InstitutionCardProps {
   institution: Institution;
@@ -20,6 +20,25 @@ const InstitutionCard: React.FC<InstitutionCardProps> = ({
     onDelete();
   };
 
+type InstitutionType =
+  | 'NAF'
+  | 'Cultura de la contribución en la escuela'
+  | 'Presencia de territorios'
+  | 'DIAN';
+const getInstitutionTypeLabel = (type: InstitutionType | null): string => {
+  if (!type) return 'No especificado';
+
+  const typeLabels: Record<InstitutionType, string> = {
+    'NAF': 'NAF',
+    'Cultura de la contribución en la escuela': 'Cultura en la escuela',
+    'Presencia de territorios': 'Presencia en territorios',
+    'DIAN': 'DIAN'
+  };
+
+  return typeLabels[type];
+};
+
+
   return (
     <div className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow duration-200">
       <div className="flex items-center">
@@ -37,6 +56,11 @@ const InstitutionCard: React.FC<InstitutionCardProps> = ({
           <p className="text-sm text-gray-500">NIT: {institution.nit}</p>
           <p className="text-sm text-gray-500">Email: {institution.email}</p>
           <p className="text-sm text-gray-500">Dirección: {institution.address}</p>
+          <p className="text-sm text-gray-500">
+            Tipo: <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs">
+              {getInstitutionTypeLabel(institution.type)}
+            </span>
+          </p>
         </div>
       </div>
       <div className="flex gap-2">

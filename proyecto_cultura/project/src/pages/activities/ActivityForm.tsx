@@ -6,8 +6,8 @@ import type { Agreement, Institution, Member, Activity, ActivityParticipant } fr
 import ParticipantSelector from './ParticipantSelector';
 
 interface ActivityFormProps {
-  activity?: (Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  activity?: (Activity & {
+    agreement?: Agreement & { institution?: Institution }
   }) | null;
   agreementId?: string;
   onSubmit: (formData: {
@@ -22,12 +22,26 @@ interface ActivityFormProps {
     image_url: string;
     image_file: File | null;
     agreement_id: string;
+    municipality: string;
     participants: ActivityParticipant[];
     observations: { title: string; description: string; activity_type: string; }[];
   }) => Promise<void>;
   onCancel: () => void;
   isEditing?: boolean;
 }
+
+const MUNICIPALITIES = [
+  'Vijes',
+  'Dagua',
+  'Jamundí',
+  'Yumbo',
+  'Yotoco',
+  'Restrepo',
+  'Darién',
+  'La cumbre',
+  'Cali'
+
+];
 
 const ActivityForm: React.FC<ActivityFormProps> = ({
   activity,
@@ -39,15 +53,20 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [agreements, setAgreements] = useState<(Agreement & { institution?: Institution })[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [filteredInstitutions, setFilteredInstitutions] = useState<Institution[]>([]);
   const [selectedAgreement, setSelectedAgreement] = useState<(Agreement & { institution?: Institution }) | null>(null);
   const [selectedInstitution, setSelectedInstitution] = useState<Institution | null>(null);
+  const [institutionType, setInstitutionType] = useState<string | null>(null);
   const [participants, setParticipants] = useState<ActivityParticipant[]>([]);
-  const [observations, setObservations] = useState<{ 
-    title: string; 
-    description: string; 
+  const [observations, setObservations] = useState<{
+    title: string;
+    description: string;
     activity_type: string;
   }[]>([]);
   const [activitiesOnSelectedDate, setActivitiesOnSelectedDate] = useState<Activity[]>([]);
+  const [activityTypes, setActivityTypes] = useState<string[]>([
+    'Taller', 'Capacitación', 'Reunión', 'Evento', 'Visita', 'Otro'
+  ]);
 
   const [formData, setFormData] = useState({
     title: activity?.title || '',
@@ -59,6 +78,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     status: activity?.status || 'en_proceso',
     progress_percentage: activity?.progress_percentage || 0,
     image_url: activity?.image_url || '',
+    municipality: activity?.municipality || '',
     image_file: null as File | null,
   });
 
@@ -81,17 +101,26 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       if (agreement) {
         setSelectedAgreement(agreement);
         setUseAgreement(true);
+        if (agreement.institution) {
+          setInstitutionType(agreement.institution.type);
+          updateActivityTypesByInstitutionType(agreement.institution.type);
+        }
       }
     } else if (activity?.agreement_id) {
       const agreement = agreements.find(a => a.id === activity.agreement_id);
       if (agreement) {
         setSelectedAgreement(agreement);
         setUseAgreement(true);
+        if (agreement.institution) {
+          setInstitutionType(agreement.institution.type);
+          updateActivityTypesByInstitutionType(agreement.institution.type);
+        }
       }
     } else if (activity && !activity.agreement_id && activity.agreement?.institution) {
-      // If activity has institution but no agreement
       setSelectedInstitution(activity.agreement.institution);
       setUseAgreement(false);
+      setInstitutionType(activity.agreement.institution.type);
+      updateActivityTypesByInstitutionType(activity.agreement.institution.type);
     }
   }, [agreements, agreementId, activity]);
 
@@ -108,10 +137,23 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     }
   }, [formData.scheduled_date]);
 
+  // Filter institutions when useAgreement changes or data loads
+  useEffect(() => {
+    filterInstitutionsByAgreementStatus();
+  }, [useAgreement, institutions, agreements]);
+
+  const updateActivityTypesByInstitutionType = (type: string | null) => {
+    if (type === 'Presencia de territorios') {
+      setActivityTypes(['Punto móvil', 'Feria de servicios', 'Capacitación', 'Otro']);
+    } else {
+      setActivityTypes(['Taller', 'Capacitación', 'Reunión', 'Evento', 'Visita', 'Otro']);
+    }
+  };
+
   const fetchAgreementsAndInstitutions = async () => {
     try {
       setIsLoading(true);
-      
+
       // Fetch agreements with institution details
       const { data: agreementsData, error: agreementsError } = await supabase
         .from('agreements')
@@ -120,7 +162,8 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
           institution:institutions (
             id,
             name,
-            logo_url
+            logo_url,
+            type
           )
         `)
         .eq('status', 'active')
@@ -143,6 +186,37 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const filterInstitutionsByAgreementStatus = () => {
+    if (institutions.length === 0 || agreements.length === 0) {
+      setFilteredInstitutions(institutions);
+      return;
+    }
+
+    // Create a Set with the IDs of institutions that have active agreements
+    const institutionIdsWithActiveAgreements = new Set(
+      agreements
+        .filter(agreement => agreement.status === 'active')
+        .map(agreement => agreement.institution?.id)
+        .filter(Boolean)
+    );
+
+    let filtered: Institution[] = [];
+
+    if (useAgreement) {
+      // Show only institutions that have active agreements
+      filtered = institutions.filter(institution => 
+        institutionIdsWithActiveAgreements.has(institution.id)
+      );
+    } else {
+      // Show only institutions that DO NOT have active agreements
+      filtered = institutions.filter(institution => 
+        !institutionIdsWithActiveAgreements.has(institution.id)
+      );
+    }
+
+    setFilteredInstitutions(filtered);
   };
 
   const fetchParticipants = async (activityId: string) => {
@@ -185,7 +259,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   const fetchActivitiesForDate = async (date: Date) => {
     try {
       const dateStr = date.toISOString().split('T')[0];
-      
+
       const { data, error: fetchError } = await supabase
         .from('activities')
         .select('*')
@@ -208,7 +282,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    
+
     if (name === 'progress_percentage') {
       const percentage = Math.min(100, Math.max(0, parseInt(value) || 0));
       setFormData(prev => ({
@@ -239,7 +313,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         ...prev,
         image_file: file
       }));
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result as string);
@@ -252,12 +326,22 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     const agreementId = e.target.value;
     const agreement = agreements.find(a => a.id === agreementId);
     setSelectedAgreement(agreement || null);
+    
+    if (agreement?.institution?.type) {
+      setInstitutionType(agreement.institution.type);
+      updateActivityTypesByInstitutionType(agreement.institution.type);
+    }
   };
 
   const handleInstitutionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const institutionId = e.target.value;
-    const institution = institutions.find(i => i.id === institutionId);
+    const institution = filteredInstitutions.find(i => i.id === institutionId);
     setSelectedInstitution(institution || null);
+    
+    if (institution?.type) {
+      setInstitutionType(institution.type);
+      updateActivityTypesByInstitutionType(institution.type);
+    }
   };
 
   const handleAddObservation = () => {
@@ -280,30 +364,45 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     setObservations(observations.filter((_, i) => i !== index));
   };
 
+  const handleUseAgreementChange = (newUseAgreement: boolean) => {
+    setUseAgreement(newUseAgreement);
+    setSelectedAgreement(null);
+    setSelectedInstitution(null);
+    setParticipants([]); // Clear participants when changing the type
+    setInstitutionType(null);
+    updateActivityTypesByInstitutionType(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Only submit if we're on the last step
     if (currentStep < 3) {
       nextStep();
       return;
     }
-    
+
     setError('');
     setIsSubmitting(true);
-    
+
     if (useAgreement && !selectedAgreement) {
       setError('Debe seleccionar un convenio');
       setIsSubmitting(false);
       return;
     }
-    
+
     if (!useAgreement && !selectedInstitution) {
       setError('Debe seleccionar una institución');
       setIsSubmitting(false);
       return;
     }
     
+    if (!formData.municipality) {
+      setError('Debe seleccionar un municipio');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const submissionData = {
         title: formData.title,
@@ -317,6 +416,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         image_url: formData.image_url,
         image_file: formData.image_file,
         agreement_id: useAgreement ? selectedAgreement!.id : '',
+        municipality: formData.municipality,
         participants,
         observations
       };
@@ -345,12 +445,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  };
-  
-  const toggleUseAgreement = () => {
-    setUseAgreement(!useAgreement);
-    setSelectedAgreement(null);
-    setSelectedInstitution(null);
   };
 
   if (isLoading) {
@@ -427,7 +521,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
                     <input
                       type="radio"
                       checked={useAgreement}
-                      onChange={() => setUseAgreement(true)}
+                      onChange={() => handleUseAgreementChange(true)}
                       className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Con convenio</span>
@@ -436,7 +530,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
                     <input
                       type="radio"
                       checked={!useAgreement}
-                      onChange={() => setUseAgreement(false)}
+                      onChange={() => handleUseAgreementChange(false)}
                       className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Sin convenio</span>
@@ -462,7 +556,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
                   <option value="">Selecciona un convenio</option>
                   {agreements.map(agreement => (
                     <option key={agreement.id} value={agreement.id}>
-                      {agreement.institution?.name} - {new Date(agreement.start_date).toLocaleDateString()}
+                      {agreement.institution?.name} - {new Date(agreement.start_date).toLocaleDateString()} - {agreement.institution?.type || 'Sin tipo'}
                     </option>
                   ))}
                 </select>
@@ -481,12 +575,17 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Selecciona una institución</option>
-                  {institutions.map(institution => (
+                  {filteredInstitutions.map(institution => (
                     <option key={institution.id} value={institution.id}>
-                      {institution.name}
+                      {institution.name} - {institution.type || 'Sin tipo'}
                     </option>
                   ))}
                 </select>
+                {filteredInstitutions.length === 0 && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    No hay instituciones sin convenios activos disponibles.
+                  </p>
+                )}
               </div>
             )}
 
@@ -506,6 +605,27 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
             </div>
 
             <div>
+              <label htmlFor="municipality" className="block text-sm font-medium text-gray-700 mb-1">
+                Municipio *
+              </label>
+              <select
+                id="municipality"
+                name="municipality"
+                value={formData.municipality}
+                onChange={handleInputChange}
+                required
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Seleccionar municipio</option>
+                {MUNICIPALITIES.map(municipality => (
+                  <option key={municipality} value={municipality}>
+                    {municipality}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label htmlFor="activity_type" className="block text-sm font-medium text-gray-700 mb-1">
                 Tipo de Actividad *
               </label>
@@ -518,12 +638,11 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Seleccionar tipo</option>
-                <option value="Taller">Taller</option>
-                <option value="Capacitación">Capacitación</option>
-                <option value="Reunión">Reunión</option>
-                <option value="Evento">Evento</option>
-                <option value="Visita">Visita</option>
-                <option value="Otro">Otro</option>
+                {activityTypes.map(type => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -847,8 +966,8 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center"
           >
             {isSubmitting && (
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             )}

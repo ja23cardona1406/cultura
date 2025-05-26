@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Search, Plus, Trash2, Eye, CheckCircle, Clock, AlertCircle, CalendarDays, List, Filter, Download, ChevronDown } from 'lucide-react';
+import { Calendar, Search, Plus, Trash2, Eye, CheckCircle, Clock, AlertCircle, CalendarDays, List, Filter, Download, ChevronDown, X} from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Activity, Agreement, Institution } from '../types';
+import type { Activity, Agreement, Institution, InstitutionType } from '../types';
 import ActivityForm from './activities/ActivityForm';
 import ActivityDetails from './activities/ActivityDetails';
 import ActivityCalendar from './activities/ActivityCalendar';
@@ -16,36 +16,57 @@ interface ActivityListProps {
   agreementId?: string;
 }
 
+const MUNICIPALITIES = [
+  'Vijes',
+  'Dagua',
+  'Jamundí',
+  'Yumbo',
+  'Yotoco',
+  'Restrepo',
+  'Darién',
+  'La cumbre',
+  'Cali'
+];
+
+const INSTITUTION_TYPES: InstitutionType[] = [
+  'NAF',
+  'Cultura de la contribución en la escuela',
+  'Presencia de territorios',
+  'DIAN'
+];
+
 const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
-  const [activities, setActivities] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [activities, setActivities] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   })[]>([]);
-  const [filteredActivities, setFilteredActivities] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [filteredActivities, setFilteredActivities] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'en_proceso' | 'finalizado' | 'cancelado'>('all');
+  const [municipalityFilter, setMunicipalityFilter] = useState<string>('all');
+  const [institutionTypeFilter, setInstitutionTypeFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [selectedActivity, setSelectedActivity] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   }) | null>(null);
   const [isDetailsView, setIsDetailsView] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  
+
   // Date range filter
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isDateRangePickerOpen, setIsDateRangePickerOpen] = useState(false);
-  
+
   // For conflict detection
   const [pendingFormData, setPendingFormData] = useState<any>(null);
   const [conflictingActivities, setConflictingActivities] = useState<Activity[]>([]);
   const [isConflictWarningOpen, setIsConflictWarningOpen] = useState(false);
-  
+
   // Refs
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +81,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
   useEffect(() => {
     applyFilters();
-  }, [activities, searchTerm, statusFilter, startDate, endDate]);
+  }, [activities, searchTerm, statusFilter, municipalityFilter, institutionTypeFilter, startDate, endDate]);
 
   const fetchActivities = async () => {
     try {
@@ -74,12 +95,13 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             institution:institutions (
               id,
               name,
-              logo_url
+              logo_url,
+              type
             )
           )
         `)
         .order('scheduled_date', { ascending: false });
-      
+
       if (agreementId) {
         query = query.eq('agreement_id', agreementId);
       }
@@ -99,7 +121,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
   const applyFilters = () => {
     let filtered = [...activities];
-    
+
     if (searchTerm) {
       filtered = filtered.filter(activity => 
         activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -107,11 +129,21 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         activity.activity_type.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     if (statusFilter !== 'all') {
       filtered = filtered.filter(activity => activity.status === statusFilter);
     }
-    
+
+    if (municipalityFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.municipality === municipalityFilter);
+    }
+
+    if (institutionTypeFilter !== 'all') {
+      filtered = filtered.filter(activity => 
+        activity.agreement?.institution?.type === institutionTypeFilter
+      );
+    }
+
     if (startDate && endDate) {
       const startDateWithTime = new Date(startDate);
       startDateWithTime.setHours(0, 0, 0, 0);
@@ -124,7 +156,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         return activityDate >= startDateWithTime && activityDate <= endDateWithTime;
       });
     }
-    
+
     setFilteredActivities(filtered);
   };
 
@@ -135,6 +167,15 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   };
 
   const clearDateRange = () => {
+    setStartDate(null);
+    setEndDate(null);
+  };
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setMunicipalityFilter('all');
+    setInstitutionTypeFilter('all');
     setStartDate(null);
     setEndDate(null);
   };
@@ -185,19 +226,19 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
   const checkForTimeConflicts = (formData: any) => {
     const dateTime = new Date(`${formData.scheduled_date}T${formData.scheduled_time}`);
-    
+
     const conflicts = checkTimeConflicts(
       dateTime.toISOString(),
       activities.filter(a => isEditing ? a.id !== selectedActivity?.id : true)
     );
-    
+
     if (conflicts.length > 0) {
       setPendingFormData(formData);
       setConflictingActivities(conflicts);
       setIsConflictWarningOpen(true);
       return true;
     }
-    
+
     return false;
   };
 
@@ -206,7 +247,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     if (hasConflicts) {
       return;
     }
-    
+
     await submitActivityToDatabase(formData);
   };
 
@@ -258,6 +299,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             status: formData.status,
             progress_percentage: formData.progress_percentage,
             image_url: finalImageUrl,
+            municipality: formData.municipality,
             is_modifiable: formData.status !== 'finalizado',
             updated_at: new Date().toISOString()
           })
@@ -269,7 +311,8 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
               institution:institutions (
                 id,
                 name,
-                logo_url
+                logo_url,
+                type
               )
             )
           `)
@@ -336,6 +379,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             status: formData.status,
             progress_percentage: formData.progress_percentage,
             image_url: finalImageUrl,
+            municipality: formData.municipality,
             is_modifiable: true
           }])
           .select(`
@@ -345,7 +389,8 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
               institution:institutions (
                 id,
                 name,
-                logo_url
+                logo_url,
+                type
               )
             )
           `)
@@ -450,6 +495,14 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     return 'Seleccionar rango de fechas';
   };
 
+  // Check if any filter is active
+  const isFiltering = 
+    searchTerm !== '' || 
+    statusFilter !== 'all' || 
+    municipalityFilter !== 'all' || 
+    institutionTypeFilter !== 'all' || 
+    (startDate !== null && endDate !== null);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -474,7 +527,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             />
           </div>
         )}
-        
+
         <div className={`flex items-center gap-${isMobile ? '2' : '4'} mb-${isMobile ? '4' : '6'}`}>
           <button
             onClick={() => {
@@ -539,7 +592,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
               <span className={isMobile ? '' : 'hidden sm:inline'}>Calendario</span>
             </button>
           </div>
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
             className={`flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 ${
               isMobile ? 'w-full justify-center' : ''
@@ -592,6 +645,32 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                   <option value="cancelado">Cancelado</option>
                 </select>
                 
+                <select
+                  value={municipalityFilter}
+                  onChange={e => setMunicipalityFilter(e.target.value)}
+                  className={`py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    isMobile ? 'w-full' : 'w-auto'
+                  }`}
+                >
+                  <option value="all">Todos los municipios</option>
+                  {MUNICIPALITIES.map(municipality => (
+                    <option key={municipality} value={municipality}>{municipality}</option>
+                  ))}
+                </select>
+                
+                <select
+                  value={institutionTypeFilter}
+                  onChange={e => setInstitutionTypeFilter(e.target.value)}
+                  className={`py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    isMobile ? 'w-full' : 'w-auto'
+                  }`}
+                >
+                  <option value="all">Todos los tipos de institución</option>
+                  {INSTITUTION_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                
                 <div className={`relative ${isMobile ? 'w-full' : 'w-auto'}`}>
                   <button 
                     onClick={() => setIsDateRangePickerOpen(!isDateRangePickerOpen)}
@@ -633,6 +712,18 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                 </button>
               </div>
             </div>
+            
+            {isFiltering && (
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={clearAllFilters}
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  <X className="h-3 w-3" />
+                  Limpiar todos los filtros
+                </button>
+              </div>
+            )}
           </div>
 
           <div className={`p-${isMobile ? '3' : '6'}`}>
@@ -641,23 +732,14 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-gray-500 mb-4">
-                    {startDate && endDate 
-                      ? 'No hay actividades en el rango de fechas seleccionado' 
-                      : searchTerm
-                        ? 'No hay actividades que coincidan con tu búsqueda'
-                        : statusFilter !== 'all'
-                          ? `No hay actividades con estado ${getStatusText(statusFilter)}`
-                          : 'No hay actividades registradas'}
+                    {isFiltering 
+                      ? 'No hay actividades que coincidan con los filtros seleccionados'
+                      : 'No hay actividades registradas'}
                   </p>
                   <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} justify-center gap-2`}>
-                    {(startDate || endDate || searchTerm || statusFilter !== 'all') && (
+                    {isFiltering && (
                       <button 
-                        onClick={() => {
-                          setStartDate(null);
-                          setEndDate(null);
-                          setSearchTerm('');
-                          setStatusFilter('all');
-                        }}
+                        onClick={clearAllFilters}
                         className={`px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors duration-200 inline-flex items-center gap-2 ${
                           isMobile ? 'w-full justify-center' : ''
                         }`}
@@ -698,7 +780,19 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                         <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-start'} mb-2`}>
                           <div>
                             <h3 className="font-semibold text-lg">{activity.title}</h3>
-                            <p className="text-sm text-gray-500">{activity.activity_type}</p>
+                            <div className="flex flex-wrap gap-2 items-center mt-1">
+                              <p className="text-sm text-gray-500">{activity.activity_type}</p>
+                              {activity.municipality && (
+                                <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+                                  {activity.municipality}
+                                </span>
+                              )}
+                              {activity.agreement?.institution?.type && (
+                                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                                  {activity.agreement.institution.type}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             getStatusBadgeClass(activity.status)

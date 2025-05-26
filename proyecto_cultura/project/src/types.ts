@@ -10,6 +10,23 @@ export type Json =
 export type UserRole = 'admin' | 'dian' | 'institucion';
 export type AgreementStatus = 'active' | 'completed' | 'pending' | 'cancelled' | 'finished';
 export type ActivityStatus =  'en_proceso' | 'finalizado' | 'cancelado';
+export type InstitutionType =
+  | 'NAF'
+  | 'Cultura de la contribución en la escuela'
+  | 'Presencia de territorios'
+  | 'DIAN';
+
+export type Municipality = 
+ | 'Vijes'
+ | 'Dagua'
+ | 'Jamundí'
+ | 'Yumbo'
+ | 'Yotoco'
+ | 'Restrepo'
+ | 'Darién'
+ | 'La cumbre'
+ | 'Cali'
+;
 
 // Definiciones de tipos de entidades
 export type User = {
@@ -33,6 +50,7 @@ export type Institution = {
   created_at: string;
   updated_at: string;
   user_id: string;
+  type: InstitutionType | null;
 };
 
 export type Member = {
@@ -57,6 +75,7 @@ export type Agreement = {
   description: string;
   created_at: string;
   updated_at: string;
+  pruebas_convenio: string | null;
 };
 
 export type Activity = {
@@ -74,6 +93,7 @@ export type Activity = {
   created_at: string;
   updated_at: string;
   rating: number | null;
+  municipality: string;
 };
 
 export type ActivityParticipant = {
@@ -139,6 +159,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           user_id: string;
+          type?: InstitutionType | null;
         };
         Update: {
           id?: string;
@@ -151,6 +172,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           user_id?: string;
+          type?: InstitutionType | null;
         };
       };
       members: {
@@ -220,6 +242,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           rating?: number | null;
+          municipality?: string;
         };
         Update: {
           id?: string;
@@ -236,6 +259,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           rating?: number | null;
+          municipality?: string;
         };
       };
       activity_participants: {

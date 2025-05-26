@@ -4,9 +4,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { format, addDays, subDays } from 'date-fns';
-import { CalendarIcon, List, ChevronDown, Info, ChevronLeft, Filter, Download, Edit2, Trash2 } from 'lucide-react';
+import { CalendarIcon, List, ChevronDown, Info, ChevronLeft, Filter, Download, Edit2, Trash2, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import type { Activity, Agreement, Institution } from '../../types';
+import type { Activity, Agreement, Institution, InstitutionType } from '../../types';
 import ActivityDetails from './ActivityDetails';
 import DateRangePicker from './DateRangePicker';
 import ActivityForm from './ActivityForm';
@@ -17,35 +17,61 @@ interface ActivityCalendarProps {
   onCreateActivity: () => void;
 }
 
-const ActivityCalendar: React.FC<ActivityCalendarProps> = ({ 
-  agreementId, 
-  onCreateActivity 
+const MUNICIPALITIES = [
+  'Vijes',
+  'Dagua',
+  'Jamundí',
+  'Yumbo',
+  'Yotoco',
+  'Restrepo',
+  'Darién',
+  'La cumbre',
+  'Cali'
+
+];
+
+const INSTITUTION_TYPES: InstitutionType[] = [
+  'NAF',
+  'Cultura de la contribución en la escuela',
+  'Presencia de territorios',
+  'DIAN'
+];
+
+const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
+  agreementId,
+  onCreateActivity
 }) => {
-  const [activities, setActivities] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [activities, setActivities] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   })[]>([]);
-  const [filteredActivities, setFilteredActivities] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [filteredActivities, setFilteredActivities] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedActivity, setSelectedActivity] = useState<(Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  const [selectedActivity, setSelectedActivity] = useState<(Activity & {
+    agreement?: Agreement & { institution?: Institution }
   }) | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'en_proceso' | 'finalizado' | 'cancelado'>('all');
+  const [municipalityFilter, setMunicipalityFilter] = useState<string>('all');
+  const [institutionTypeFilter, setInstitutionTypeFilter] = useState<string>('all');
+
   // State for calendar view options
   const [calendarView, setCalendarView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'>('dayGridMonth');
   const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
-  
+
   // Date range filter
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isDateRangePickerOpen, setIsDateRangePickerOpen] = useState(false);
-  
+
   // Refs
   const calendarRef = useRef<any>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -56,7 +82,7 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
   useEffect(() => {
     applyFilters();
-  }, [activities, startDate, endDate]);
+  }, [activities, searchTerm, statusFilter, municipalityFilter, institutionTypeFilter, startDate, endDate]);
 
   const fetchActivities = async () => {
     try {
@@ -70,13 +96,13 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
             institution:institutions (
               id,
               name,
-              logo_url
+              logo_url,
+              type
             )
           )
         `)
         .order('scheduled_date', { ascending: false });
-      
-      // If agreementId is provided, filter by it
+
       if (agreementId) {
         query = query.eq('agreement_id', agreementId);
       }
@@ -97,10 +123,30 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
   const applyFilters = () => {
     let filtered = [...activities];
-    
-    // Apply date range filter if both dates are set
+
+    if (searchTerm) {
+      filtered = filtered.filter(activity => 
+        activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        activity.activity_type.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.status === statusFilter);
+    }
+
+    if (municipalityFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.municipality === municipalityFilter);
+    }
+
+    if (institutionTypeFilter !== 'all') {
+      filtered = filtered.filter(activity => 
+        activity.agreement?.institution?.type === institutionTypeFilter
+      );
+    }
+
     if (startDate && endDate) {
-      // Create dates with time set to start and end of day to ensure inclusive range
       const startDateWithTime = new Date(startDate);
       startDateWithTime.setHours(0, 0, 0, 0);
       
@@ -112,8 +158,17 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
         return activityDate >= startDateWithTime && activityDate <= endDateWithTime;
       });
     }
-    
+
     setFilteredActivities(filtered);
+  };
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setMunicipalityFilter('all');
+    setInstitutionTypeFilter('all');
+    setStartDate(null);
+    setEndDate(null);
   };
 
   const handleDateRangeChange = (start: Date | null, end: Date | null) => {
@@ -145,7 +200,7 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       id: activity.id,
       title: activity.title,
       start: activity.scheduled_date,
-      end: new Date(new Date(activity.scheduled_date).getTime() + 3600000).toISOString(), // Add 1 hour by default
+      end: new Date(new Date(activity.scheduled_date).getTime() + 3600000).toISOString(),
       backgroundColor: getStatusColor(activity.status),
       borderColor: getStatusColor(activity.status),
       extendedProps: {
@@ -153,7 +208,9 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
         description: activity.description,
         institution: activity.agreement?.institution?.name,
         institution_logo: activity.agreement?.institution?.logo_url,
-        status: activity.status
+        status: activity.status,
+        municipality: activity.municipality,
+        institution_type: activity.agreement?.institution?.type
       }
     }));
   };
@@ -168,10 +225,8 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
   const handleActivitySubmit = async (formData: any) => {
     try {
-      // Combine date and time for scheduled_date
       const dateTime = new Date(`${formData.scheduled_date}T${formData.scheduled_time}`);
       
-      // Handle image upload if provided
       let finalImageUrl = formData.image_url;
       
       if (formData.image_file) {
@@ -191,7 +246,6 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       }
       
       if (selectedActivity) {
-        // Update existing activity
         const { data: updatedActivity, error: updateError } = await supabase
           .from('activities')
           .update({
@@ -222,52 +276,6 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
         if (updateError) throw updateError;
         
-        // Delete existing participants and add new ones
-        const { error: deletePartError } = await supabase
-          .from('activity_participants')
-          .delete()
-          .eq('activity_id', selectedActivity.id);
-        
-        if (deletePartError) throw deletePartError;
-        
-        // Add updated participants
-        if (formData.participants.length > 0) {
-          const { error: addPartError } = await supabase
-            .from('activity_participants')
-            .insert(
-              formData.participants.map((p: any) => ({
-                ...p,
-                activity_id: selectedActivity.id
-              }))
-            );
-          
-          if (addPartError) throw addPartError;
-        }
-        
-        // Delete existing observations and add new ones
-        const { error: deleteObsError } = await supabase
-          .from('observations')
-          .delete()
-          .eq('activity_id', selectedActivity.id);
-        
-        if (deleteObsError) throw deleteObsError;
-        
-        // Add updated observations
-        if (formData.observations.length > 0) {
-          const { error: addObsError } = await supabase
-            .from('observations')
-            .insert(
-              formData.observations.map((o: any) => ({
-                ...o,
-                activity_id: selectedActivity.id,
-                created_at: new Date().toISOString()
-              }))
-            );
-          
-          if (addObsError) throw addObsError;
-        }
-
-        // Update the activities list
         setActivities(prev => 
           prev.map(activity => activity.id === selectedActivity.id ? updatedActivity : activity)
         );
@@ -276,11 +284,11 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       }
       
       setIsEditModalOpen(false);
-      fetchActivities(); // Refresh the activities list
+      fetchActivities();
       
     } catch (err) {
       const error = err as Error;
-      setError(error.message || 'Hubo un error al guardar la actividad');
+      throw error;
     }
   };
 
@@ -293,7 +301,6 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
     setError('');
 
     try {
-      // First delete related observations
       const { error: obsError } = await supabase
         .from('observations')
         .delete()
@@ -301,7 +308,6 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       
       if (obsError) throw obsError;
       
-      // Then delete related participants
       const { error: partError } = await supabase
         .from('activity_participants')
         .delete()
@@ -309,7 +315,6 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       
       if (partError) throw partError;
       
-      // Finally delete the activity
       const { error: deleteError } = await supabase
         .from('activities')
         .delete()
@@ -348,7 +353,7 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
   const renderEventContent = (eventInfo: any) => {
     const { extendedProps } = eventInfo.event;
-    
+
     return (
       <div className="w-full overflow-hidden">
         <div className="text-xs font-semibold mb-1 truncate">
@@ -397,6 +402,14 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
     );
   };
 
+  // Check if any filter is active
+  const isFiltering = 
+    searchTerm !== '' || 
+    statusFilter !== 'all' || 
+    municipalityFilter !== 'all' || 
+    institutionTypeFilter !== 'all' || 
+    (startDate !== null && endDate !== null);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -414,7 +427,7 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       )}
 
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="relative">
             <button 
               onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)}
@@ -442,11 +455,63 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
               </div>
             )}
           </div>
-          
+
+          <div className="flex-1 min-w-[200px]">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Buscar actividades..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">Todos los estados</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="finalizado">Finalizado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+
+          <select
+            value={municipalityFilter}
+            onChange={(e) => setMunicipalityFilter(e.target.value)}
+            className="py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">Todos los municipios</option>
+            {MUNICIPALITIES.map(municipality => (
+              <option key={municipality} value={municipality}>{municipality}</option>
+            ))}
+          </select>
+
+          <select
+            value={institutionTypeFilter}
+            onChange={(e) => setInstitutionTypeFilter(e.target.value)}
+            className="py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">Todos los tipos de institución</option>
+            {INSTITUTION_TYPES.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
           <div className="relative">
             <button 
               onClick={() => setIsDateRangePickerOpen(!isDateRangePickerOpen)}
-              className={`flex items-center gap-2 px-3 py-2 text-sm ${startDate && endDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-gray-300'} border rounded-md hover:bg-gray-50 transition`}
+              className={`flex items-center gap-2 px-3 py-2 text-sm ${
+                startDate && endDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-gray-300'
+              } border rounded-md hover:bg-gray-50 transition`}
             >
               <Filter className="h-4 w-4" />
               <span className="truncate max-w-[150px]">{formatDateRange()}</span>
@@ -468,33 +533,28 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
               </div>
             )}
           </div>
-          
-          <div className="hidden md:flex items-center gap-1 text-sm">
-            <div className="flex items-center gap-1 ml-4">
-              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-              <span className="text-gray-600">En Proceso</span>
-            </div>
-            <div className="flex items-center gap-1 ml-2">
-              <span className="w-3 h-3 rounded-full bg-green-500"></span>
-              <span className="text-gray-600">Finalizado</span>
-            </div>
-            <div className="flex items-center gap-1 ml-2">
-              <span className="w-3 h-3 rounded-full bg-red-500"></span>
-              <span className="text-gray-600">Cancelado</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
+
           <button
             onClick={generateReport}
             className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition"
           >
             <Download className="h-4 w-4" />
-            <span className="hidden sm:inline">Generar Reporte</span>
+            <span>Generar Reporte</span>
           </button>
         </div>
       </div>
+
+      {isFiltering && (
+        <div className="flex justify-end">
+          <button
+            onClick={clearAllFilters}
+            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          >
+            <ChevronDown className="h-3 w-3" />
+            Limpiar todos los filtros
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="p-1 sm:p-4">
@@ -502,11 +562,11 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
             <div className="text-center py-12">
               <CalendarIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
               <p className="text-gray-500 mb-4">
-                {startDate && endDate 
-                  ? 'No hay actividades en el rango de fechas seleccionado' 
+                {isFiltering 
+                  ? 'No hay actividades que coincidan con los filtros seleccionados' 
                   : 'No hay actividades programadas'}
               </p>
-              {!startDate && !endDate && (
+              {!isFiltering && (
                 <button 
                   onClick={onCreateActivity}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
@@ -514,12 +574,12 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
                   Crear Primera Actividad
                 </button>
               )}
-              {startDate && endDate && (
+              {isFiltering && (
                 <button 
-                  onClick={clearDateRange}
+                  onClick={clearAllFilters}
                   className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition"
                 >
-                  Limpiar Filtro
+                  Limpiar Filtros
                 </button>
               )}
             </div>

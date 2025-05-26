@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronRight } from 'lucide-react';
+import { Plus, ChevronRight, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Institution, Member, SupabaseError } from '../types';
+import type { Institution, Member, SupabaseError, InstitutionType } from '../types';
 import { PostgrestError } from '@supabase/supabase-js';
 import InstitutionCard from './institutions/InstitutionCard';
 import InstitutionDetails from './institutions/InstitutionDetails';
@@ -12,6 +12,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 
 export function Institutions() {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [filteredInstitutions, setFilteredInstitutions] = useState<Institution[]>([]);
   const [selectedInstitution, setSelectedInstitution] = useState<Institution | null>(null);
   const [isInstitutionModalOpen, setIsInstitutionModalOpen] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -24,9 +25,20 @@ export function Institutions() {
   const [isMemberEditing, setIsMemberEditing] = useState(false);
   const [error, setError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<InstitutionType | 'all'>('all');
+  const [showFilters, setShowFilters] = useState(false);
   
   const isMobile = useMediaQuery('(max-width: 639px)');
   const isTablet = useMediaQuery('(min-width: 640px) and (max-width: 1023px)');
+
+  // Opciones de filtro
+  const filterOptions: Array<{ value: InstitutionType | 'all'; label: string }> = [
+    { value: 'all', label: 'Todas las instituciones' },
+    { value: 'NAF', label: 'NAF' },
+    { value: 'Cultura de la contribución en la escuela', label: 'Cultura en la escuela' },
+    { value: 'Presencia de territorios', label: 'Presencia en territorios' },
+    { value: 'DIAN', label: 'DIAN' }
+  ];
 
   useEffect(() => {
     const initializeData = async () => {
@@ -43,6 +55,15 @@ export function Institutions() {
       fetchMembers(selectedInstitution.id);
     }
   }, [selectedInstitution]);
+
+  // Efecto para filtrar las instituciones cuando cambia el filtro o la lista de instituciones
+  useEffect(() => {
+    if (selectedFilter === 'all') {
+      setFilteredInstitutions(institutions);
+    } else {
+      setFilteredInstitutions(institutions.filter(institution => institution.type === selectedFilter));
+    }
+  }, [institutions, selectedFilter]);
 
   const checkAuth = async () => {
     try {
@@ -78,10 +99,9 @@ export function Institutions() {
       }
 
       const { data, error: fetchError } = await supabase
-  .from('institutions')
-  .select('*')  // Selecciona todas las columnas
-  .order('created_at', { ascending: false });  // Ordena por la fecha de creación
-
+        .from('institutions')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (fetchError) {
         throw fetchError;
@@ -126,17 +146,15 @@ export function Institutions() {
       let fileName = '';
       let filePath = '';
 
-      // Formatear nombres para que sean URL-friendly
       const formatName = (str: string) => {
         return str
           .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "") // Elimina acentos
-          .replace(/[^a-zA-Z0-9]/g, '_') // Reemplaza caracteres especiales por guiones bajos
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9]/g, '_')
           .toLowerCase();
       };
 
       const formattedName = formatName(name);
-      // Move declaration outside of if/else block to make it accessible throughout the function
       const formattedInstitutionName = institutionName ? formatName(institutionName) : 'unknown_institution';
 
       if (type === 'institution') {
@@ -147,12 +165,10 @@ export function Institutions() {
         filePath = `members/${fileName}`;
       }
 
-      // Verificar si ya existe un archivo con ese nombre
       const { data: existingFiles } = await supabase.storage
         .from('imagenes')
         .list(type === 'institution' ? 'institutions' : 'members');
       
-      // Si existe un archivo con el mismo nombre, añadir timestamp para hacerlo único
       if (existingFiles?.some(f => f.name === fileName)) {
         const timestamp = new Date().getTime();
         fileName = type === 'institution' 
@@ -190,7 +206,6 @@ export function Institutions() {
     setError('');
 
     try {
-      // Primero eliminamos los miembros asociados
       const { error: membersError } = await supabase
         .from('members')
         .delete()
@@ -198,7 +213,6 @@ export function Institutions() {
 
       if (membersError) throw membersError;
 
-      // Luego eliminamos la institución
       const { error: institutionError } = await supabase
         .from('institutions')
         .delete()
@@ -257,6 +271,7 @@ export function Institutions() {
     email: string;
     logo_url: string;
     logo_file: File | null;
+    type: InstitutionType | null;
   }) => {
     setError('');
 
@@ -274,7 +289,6 @@ export function Institutions() {
       }
 
       if (isEditing && selectedInstitution) {
-        // Update existing institution
         const { data, error: updateError } = await supabase
           .from('institutions')
           .update({
@@ -283,6 +297,7 @@ export function Institutions() {
             address: formData.address,
             email: formData.email,
             logo_url,
+            type: formData.type,
           })
           .eq('id', selectedInstitution.id)
           .select()
@@ -295,7 +310,6 @@ export function Institutions() {
         );
         setSelectedInstitution(data as Institution);
       } else {
-        // Create new institution
         const { data, error: insertError } = await supabase
           .from('institutions')
           .insert([{
@@ -304,7 +318,8 @@ export function Institutions() {
             address: formData.address,
             email: formData.email,
             logo_url,
-            user_id: user.id
+            user_id: user.id,
+            type: formData.type,
           }])
           .select()
           .single();
@@ -349,7 +364,6 @@ export function Institutions() {
       }
 
       if (isMemberEditing && selectedMember) {
-        // Update existing member
         const { data, error } = await supabase
           .from('members')
           .update({
@@ -371,7 +385,6 @@ export function Institutions() {
         );
         setSelectedMember(data as Member);
       } else {
-        // Create new member
         const { data, error } = await supabase
           .from('members')
           .insert([{
@@ -407,6 +420,26 @@ export function Institutions() {
   const handleEditMember = () => {
     setIsMemberEditing(true);
     setIsMemberModalOpen(true);
+  };
+
+  const getInstitutionTypeLabel = (type: InstitutionType | null): string => {
+    if (!type) return 'No especificado';
+    
+    const typeLabels: Record<InstitutionType, string> = {
+      'NAF': 'NAF',
+      'Cultura de la contribución en la escuela': 'Cultura en la escuela',
+      'Presencia de territorios': 'Presencia en territorios',
+      'DIAN': 'DIAN'
+    };
+    
+    return typeLabels[type] ?? 'Tipo desconocido';
+  };
+
+  const getFilteredCount = () => {
+    if (selectedFilter === 'all') {
+      return institutions.length;
+    }
+    return institutions.filter(inst => inst.type === selectedFilter).length;
   };
 
   if (isLoading) {
@@ -525,23 +558,92 @@ export function Institutions() {
         </div>
       )}
 
+      {/* Filtros */}
+      <div className="bg-white rounded-lg shadow-md p-4">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors duration-200"
+            >
+              <Filter className="h-4 w-4" />
+              Filtros
+            </button>
+            
+            {!isMobile && (
+              <div className="flex flex-wrap gap-2">
+                {filterOptions.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => setSelectedFilter(option.value)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors duration-200 ${
+                      selectedFilter === option.value
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="text-sm text-gray-600">
+            Mostrando {getFilteredCount()} de {institutions.length} instituciones
+          </div>
+        </div>
+
+        {/* Filtros móviles */}
+        {(isMobile && showFilters) && (
+          <div className="mt-4 pt-4 border-t">
+            <div className="grid grid-cols-1 gap-2">
+              {filterOptions.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    setSelectedFilter(option.value);
+                    setShowFilters(false);
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 text-left ${
+                    selectedFilter === option.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
           <div className="space-y-4">
-            {institutions.length === 0 ? (
+            {filteredInstitutions.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-500 mb-4">No hay instituciones registradas</p>
-                <button 
-                  onClick={() => setIsInstitutionModalOpen(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar Institución
-                </button>
+                {institutions.length === 0 ? (
+                  <>
+                    <p className="text-gray-500 mb-4">No hay instituciones registradas</p>
+                    <button 
+                      onClick={() => setIsInstitutionModalOpen(true)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar Institución
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-gray-500">
+                    No hay instituciones que coincidan con el filtro seleccionado
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
-                {institutions.map((institution) => (
+                {filteredInstitutions.map((institution) => (
                   <div key={institution.id} 
                     className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
                   >
@@ -562,6 +664,11 @@ export function Institutions() {
                       <div>
                         <h3 className="font-medium text-gray-900">{institution.name}</h3>
                         <p className="text-sm text-gray-500">{institution.email}</p>
+                        <div className="mt-1">
+                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs">
+                            {getInstitutionTypeLabel(institution.type)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>

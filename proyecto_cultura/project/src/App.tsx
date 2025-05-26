@@ -7,7 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Institutions from './pages/Institutions';
 import Agreements from './pages/Agreements';
-import Activities from './pages/Activities';
+import Activities from './pages/ActivityManagement';
 import Reports from './pages/Reports';
 
 const App: React.FC = () => {

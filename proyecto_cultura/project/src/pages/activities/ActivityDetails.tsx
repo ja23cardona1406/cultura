@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit2, Trash2, Calendar, Clock, User, Users, CheckCircle, AlertCircle, FilePlus, Download, Star } from 'lucide-react';
+import { Edit2, Trash2, Calendar, Clock, User, Users, CheckCircle, AlertCircle, FilePlus, Download, Star, MapPin } from 'lucide-react';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import { jsPDF } from 'jspdf';
 import { supabase } from '../../lib/supabase';
@@ -9,8 +9,8 @@ import RatingForm from './RatingForm';
 import StarRating from './StarRating';
 
 interface ActivityDetailsProps {
-  activity: Activity & { 
-    agreement?: Agreement & { institution?: Institution } 
+  activity: Activity & {
+    agreement?: Agreement & { institution?: Institution }
   };
   onBack: () => void;
   onEdit: () => void;
@@ -45,7 +45,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   const getCurrentUser = async () => {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError) throw userError;
       
       if (user) {
@@ -77,7 +77,24 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
     doc.text(`Tipo: ${activity.activity_type}`, 20, yPosition);
     yPosition += lineHeight;
     doc.text(`Fecha: ${new Date(activity.scheduled_date).toLocaleDateString()}`, 20, yPosition);
-    yPosition += lineHeight * 2;
+    yPosition += lineHeight;
+    
+    if (activity.municipality) {
+      doc.text(`Municipio: ${activity.municipality}`, 20, yPosition);
+      yPosition += lineHeight;
+    }
+    
+    if (activity.agreement?.institution) {
+      doc.text(`Institución: ${activity.agreement.institution.name}`, 20, yPosition);
+      yPosition += lineHeight;
+      
+      if (activity.agreement.institution.type) {
+        doc.text(`Tipo de institución: ${activity.agreement.institution.type}`, 20, yPosition);
+        yPosition += lineHeight;
+      }
+    }
+    
+    yPosition += lineHeight;
 
     doc.setFontSize(14);
     doc.text('Resumen del Informe', 20, yPosition);
@@ -111,7 +128,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   const fetchRelatedData = async () => {
     try {
       setIsLoading(true);
-      
+
       const { data: participantsData, error: participantsError } = await supabase
         .from('activity_participants')
         .select(`
@@ -155,7 +172,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   }) => {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
+
       if (authError) {
         throw new Error(`Error de autenticación: ${authError.message}`);
       }
@@ -229,7 +246,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   };
 
   const handleRatingSubmit = async (
-    activityRating: number, 
+    activityRating: number,
     participantRatings: { memberId: string, rating: number }[]
   ) => {
     try {
@@ -237,7 +254,7 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
         .from('activities')
         .update({ rating: activityRating })
         .eq('id', activity.id);
-      
+
       if (updateActivityError) throw updateActivityError;
       
       const participantUpdates = participantRatings.map(async (p) => {
@@ -349,6 +366,12 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
               </span>
             </div>
             <p className="text-gray-600">{activity.activity_type}</p>
+            {activity.municipality && (
+              <div className="flex items-center gap-1 mt-1 text-gray-600">
+                <MapPin className="h-4 w-4 text-gray-400" />
+                <span>{activity.municipality}</span>
+              </div>
+            )}
           </div>
           <div className={`flex gap-2 ${isMobile ? 'w-full' : ''}`}>
             <button
@@ -448,7 +471,14 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
                   )}
                   <div>
                     <p className="font-medium">{activity.agreement.institution.name}</p>
-                    <p className="text-sm text-gray-500">Convenio activo desde {new Date(activity.agreement.start_date).toLocaleDateString()}</p>
+                    {activity.agreement.institution.type && (
+                      <p className="text-sm text-blue-600">
+                        {activity.agreement.institution.type}
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-500">
+                      Convenio activo desde {new Date(activity.agreement.start_date).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
               </div>
