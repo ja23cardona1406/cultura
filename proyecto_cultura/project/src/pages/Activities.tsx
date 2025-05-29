@@ -37,10 +37,14 @@ const INSTITUTION_TYPES: InstitutionType[] = [
 
 const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   const [activities, setActivities] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution };
+    direct_institution?: Institution;
+    institution?: Institution;
   })[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution };
+    direct_institution?: Institution;
+    institution?: Institution;
   })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,7 +54,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
   const [institutionTypeFilter, setInstitutionTypeFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution };
+    direct_institution?: Institution;
+    institution?: Institution;
   }) | null>(null);
   const [isDetailsView, setIsDetailsView] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -98,6 +104,12 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
               logo_url,
               type
             )
+          ),
+          direct_institution:institutions!activities_institution_id_fkey (
+            id,
+            name,
+            logo_url,
+            type
           )
         `)
         .order('scheduled_date', { ascending: false });
@@ -110,7 +122,13 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
       if (fetchError) throw fetchError;
 
-      setActivities(data || []);
+      // Process the data to combine both institution sources
+      const processedData = (data || []).map(activity => ({
+        ...activity,
+        institution: activity.agreement?.institution || activity.direct_institution || null
+      }));
+
+      setActivities(processedData);
     } catch (err) {
       const error = err as Error;
       setError('Error al cargar las actividades: ' + error.message);
@@ -140,7 +158,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
 
     if (institutionTypeFilter !== 'all') {
       filtered = filtered.filter(activity => 
-        activity.agreement?.institution?.type === institutionTypeFilter
+        activity.institution?.type === institutionTypeFilter
       );
     }
 
@@ -301,6 +319,8 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
             image_url: finalImageUrl,
             municipality: formData.municipality,
             is_modifiable: formData.status !== 'finalizado',
+            agreement_id: formData.agreement_id || null,
+            institution_id: formData.institution_id || null,
             updated_at: new Date().toISOString()
           })
           .eq('id', selectedActivity.id)
@@ -314,63 +334,34 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                 logo_url,
                 type
               )
+            ),
+            direct_institution:institutions!activities_institution_id_fkey (
+              id,
+              name,
+              logo_url,
+              type
             )
           `)
           .single();
 
         if (updateError) throw updateError;
-        
-        const { error: deletePartError } = await supabase
-          .from('activity_participants')
-          .delete()
-          .eq('activity_id', selectedActivity.id);
-        
-        if (deletePartError) throw deletePartError;
-        
-        if (formData.participants.length > 0) {
-          const { error: addPartError } = await supabase
-            .from('activity_participants')
-            .insert(
-              formData.participants.map((p: any) => ({
-                ...p,
-                activity_id: selectedActivity.id
-              }))
-            );
-          
-          if (addPartError) throw addPartError;
-        }
-        
-        const { error: deleteObsError } = await supabase
-          .from('observations')
-          .delete()
-          .eq('activity_id', selectedActivity.id);
-        
-        if (deleteObsError) throw deleteObsError;
-        
-        if (formData.observations.length > 0) {
-          const { error: addObsError } = await supabase
-            .from('observations')
-            .insert(
-              formData.observations.map((o: any) => ({
-                ...o,
-                activity_id: selectedActivity.id,
-                created_at: new Date().toISOString()
-              }))
-            );
-          
-          if (addObsError) throw addObsError;
-        }
 
+        const processedActivity = {
+          ...updatedActivity,
+          institution: updatedActivity.agreement?.institution || updatedActivity.direct_institution || null
+        };
+        
         setActivities(prev => 
-          prev.map(activity => activity.id === selectedActivity.id ? updatedActivity : activity)
+          prev.map(activity => activity.id === selectedActivity.id ? processedActivity : activity)
         );
         
-        setSelectedActivity(updatedActivity);
+        setSelectedActivity(processedActivity);
       } else {
         const { data: newActivity, error: insertError } = await supabase
           .from('activities')
           .insert([{
-            agreement_id: formData.agreement_id,
+            agreement_id: formData.agreement_id || null,
+            institution_id: formData.institution_id || null,
             title: formData.title,
             activity_type: formData.activity_type,
             scheduled_date: dateTime.toISOString(),
@@ -392,40 +383,24 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                 logo_url,
                 type
               )
+            ),
+            direct_institution:institutions!activities_institution_id_fkey (
+              id,
+              name,
+              logo_url,
+              type
             )
           `)
           .single();
 
         if (insertError) throw insertError;
-        
-        if (formData.participants.length > 0) {
-          const { error: partError } = await supabase
-            .from('activity_participants')
-            .insert(
-              formData.participants.map((p: any) => ({
-                ...p,
-                activity_id: newActivity.id
-              }))
-            );
-          
-          if (partError) throw partError;
-        }
-        
-        if (formData.observations.length > 0) {
-          const { error: obsError } = await supabase
-            .from('observations')
-            .insert(
-              formData.observations.map((o: any) => ({
-                ...o,
-                activity_id: newActivity.id,
-                created_at: new Date().toISOString()
-              }))
-            );
-          
-          if (obsError) throw obsError;
-        }
 
-        setActivities(prev => [newActivity, ...prev]);
+        const processedActivity = {
+          ...newActivity,
+          institution: newActivity.agreement?.institution || newActivity.direct_institution || null
+        };
+
+        setActivities(prev => [processedActivity, ...prev]);
       }
       
       setIsModalOpen(false);
@@ -787,9 +762,9 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                                   {activity.municipality}
                                 </span>
                               )}
-                              {activity.agreement?.institution?.type && (
+                              {activity.institution?.type && (
                                 <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
-                                  {activity.agreement.institution.type}
+                                  {activity.institution.type}
                                 </span>
                               )}
                             </div>
@@ -812,16 +787,16 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                                 {new Date(activity.scheduled_date).toLocaleDateString()} - {new Date(activity.scheduled_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                               </span>
                             </div>
-                            {activity.agreement?.institution && (
+                            {activity.institution && (
                               <div className="mt-1 flex items-center gap-1 text-blue-600">
-                                {activity.agreement.institution.logo_url ? (
+                                {activity.institution.logo_url ? (
                                   <img 
-                                    src={activity.agreement.institution.logo_url} 
-                                    alt={activity.agreement.institution.name} 
+                                    src={activity.institution.logo_url} 
+                                    alt={activity.institution.name} 
                                     className="h-4 w-4 rounded-full object-cover"
                                   />
                                 ) : null}
-                                <span>{activity.agreement.institution.name}</span>
+                                <span>{activity.institution.name}</span>
                               </div>
                             )}
                           </div>

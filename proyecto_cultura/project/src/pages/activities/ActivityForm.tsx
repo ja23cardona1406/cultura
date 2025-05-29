@@ -7,7 +7,8 @@ import ParticipantSelector from './ParticipantSelector';
 
 interface ActivityFormProps {
   activity?: (Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution };
+    direct_institution?: Institution;
   }) | null;
   agreementId?: string;
   onSubmit: (formData: {
@@ -21,7 +22,8 @@ interface ActivityFormProps {
     progress_percentage: number;
     image_url: string;
     image_file: File | null;
-    agreement_id: string;
+    agreement_id?: string;
+    institution_id?: string;
     municipality: string;
     participants: ActivityParticipant[];
     observations: { title: string; description: string; activity_type: string; }[];
@@ -40,7 +42,6 @@ const MUNICIPALITIES = [
   'Darién',
   'La cumbre',
   'Cali'
-
 ];
 
 const ActivityForm: React.FC<ActivityFormProps> = ({
@@ -116,13 +117,13 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
           updateActivityTypesByInstitutionType(agreement.institution.type);
         }
       }
-    } else if (activity && !activity.agreement_id && activity.agreement?.institution) {
-      setSelectedInstitution(activity.agreement.institution);
+    } else if (activity && !activity.agreement_id && activity.direct_institution) {
+      setSelectedInstitution(activity.direct_institution);
       setUseAgreement(false);
-      setInstitutionType(activity.agreement.institution.type);
-      updateActivityTypesByInstitutionType(activity.agreement.institution.type);
+      setInstitutionType(activity.direct_institution.type);
+      updateActivityTypesByInstitutionType(activity.direct_institution.type);
     }
-  }, [agreements, agreementId, activity]);
+  }, [agreements, institutions, agreementId, activity]);
 
   useEffect(() => {
     if (activity?.id) {
@@ -137,7 +138,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     }
   }, [formData.scheduled_date]);
 
-  // Filter institutions when useAgreement changes or data loads
   useEffect(() => {
     filterInstitutionsByAgreementStatus();
   }, [useAgreement, institutions, agreements]);
@@ -154,7 +154,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     try {
       setIsLoading(true);
 
-      // Fetch agreements with institution details
       const { data: agreementsData, error: agreementsError } = await supabase
         .from('agreements')
         .select(`
@@ -172,7 +171,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       if (agreementsError) throw agreementsError;
       setAgreements(agreementsData || []);
       
-      // Fetch all institutions
       const { data: institutionsData, error: institutionsError } = await supabase
         .from('institutions')
         .select('*')
@@ -194,7 +192,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       return;
     }
 
-    // Create a Set with the IDs of institutions that have active agreements
     const institutionIdsWithActiveAgreements = new Set(
       agreements
         .filter(agreement => agreement.status === 'active')
@@ -205,12 +202,10 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     let filtered: Institution[] = [];
 
     if (useAgreement) {
-      // Show only institutions that have active agreements
       filtered = institutions.filter(institution => 
         institutionIdsWithActiveAgreements.has(institution.id)
       );
     } else {
-      // Show only institutions that DO NOT have active agreements
       filtered = institutions.filter(institution => 
         !institutionIdsWithActiveAgreements.has(institution.id)
       );
@@ -368,7 +363,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     setUseAgreement(newUseAgreement);
     setSelectedAgreement(null);
     setSelectedInstitution(null);
-    setParticipants([]); // Clear participants when changing the type
+    setParticipants([]);
     setInstitutionType(null);
     updateActivityTypesByInstitutionType(null);
   };
@@ -376,7 +371,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Only submit if we're on the last step
     if (currentStep < 3) {
       nextStep();
       return;
@@ -396,7 +390,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       setIsSubmitting(false);
       return;
     }
-    
+
     if (!formData.municipality) {
       setError('Debe seleccionar un municipio');
       setIsSubmitting(false);
@@ -415,7 +409,8 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         progress_percentage: formData.progress_percentage,
         image_url: formData.image_url,
         image_file: formData.image_file,
-        agreement_id: useAgreement ? selectedAgreement!.id : '',
+        agreement_id: useAgreement ? selectedAgreement!.id : undefined,
+        institution_id: !useAgreement ? selectedInstitution!.id : undefined,
         municipality: formData.municipality,
         participants,
         observations
@@ -961,18 +956,18 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
           )}
 
           <button
-  type="submit"
-  disabled={isSubmitting}
-  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center"
->
-  {isSubmitting && (
-    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-  )}
-  {currentStep < 3 ? 'Siguiente' : (isEditing ? 'Guardar Cambios' : 'Crear Actividad')}
-</button>
+            type="submit"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center"
+          >
+            {isSubmitting && (
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white\" xmlns="http://www.w3.org/2000/svg\" fill="none\" viewBox="0 0 24 24">
+                <circle className="opacity-25\" cx="12\" cy="12\" r="10\" stroke="currentColor\" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            )}
+            {currentStep < 3 ? 'Siguiente' : (isEditing ? 'Guardar Cambios' : 'Crear Actividad')}
+          </button>
         </div>
       </form>
     </div>

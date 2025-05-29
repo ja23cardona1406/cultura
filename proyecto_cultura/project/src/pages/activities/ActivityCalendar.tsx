@@ -206,7 +206,8 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
       extendedProps: {
         activity_type: activity.activity_type,
         description: activity.description,
-        institution: activity.agreement?.institution?.name,
+        institution: activity.agreement?.institution?.name || 
+                    "Institución sin convenio", // Display fallback for institutions without agreement
         institution_logo: activity.agreement?.institution?.logo_url,
         status: activity.status,
         municipality: activity.municipality,
@@ -258,7 +259,9 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
             progress_percentage: formData.progress_percentage,
             image_url: finalImageUrl,
             is_modifiable: formData.status !== 'finalizado',
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            agreement_id: formData.agreement_id || null,
+            institution_id: formData.institution_id || null
           })
           .eq('id', selectedActivity.id)
           .select(`

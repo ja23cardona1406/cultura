@@ -81,6 +81,7 @@ export type Agreement = {
 export type Activity = {
   id: string;
   agreement_id: string;
+  institution_id: string;
   title: string;
   activity_type: string;
   scheduled_date: string;
