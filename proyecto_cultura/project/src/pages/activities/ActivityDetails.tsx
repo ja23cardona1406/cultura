@@ -36,11 +36,36 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
+  const [institution, setInstitution] = useState<Institution | null>(null);
 
   useEffect(() => {
     fetchRelatedData();
     getCurrentUser();
+    
+    // Fetch direct institution if there's no agreement
+    if (!activity.agreement_id && activity.institution_id) {
+      fetchInstitution(activity.institution_id);
+    }
   }, [activity.id]);
+
+  const fetchInstitution = async (institutionId: string) => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('institutions')
+        .select('*')
+        .eq('id', institutionId)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      if (data) {
+        setInstitution(data);
+      }
+    } catch (err) {
+      const error = err as Error;
+      console.error('Error fetching institution:', error.message);
+    }
+  };
 
   const getCurrentUser = async () => {
     try {
@@ -84,12 +109,14 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
       yPosition += lineHeight;
     }
     
-    if (activity.agreement?.institution) {
-      doc.text(`Institución: ${activity.agreement.institution.name}`, 20, yPosition);
+    // Display institution info from either agreement or direct institution
+    const displayInstitution = activity.agreement?.institution || institution;
+    if (displayInstitution) {
+      doc.text(`Institución: ${displayInstitution.name}`, 20, yPosition);
       yPosition += lineHeight;
       
-      if (activity.agreement.institution.type) {
-        doc.text(`Tipo de institución: ${activity.agreement.institution.type}`, 20, yPosition);
+      if (displayInstitution.type) {
+        doc.text(`Tipo de institución: ${displayInstitution.type}`, 20, yPosition);
         yPosition += lineHeight;
       }
     }
@@ -337,6 +364,9 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
 
   const hasParticipantRatings = participants.some(p => p.rating !== null && p.rating > 0);
 
+  // Get the institution to display (either from agreement or direct institution)
+  const displayInstitution = activity.agreement?.institution || institution;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -454,14 +484,14 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
             <h3 className="font-medium text-gray-900 mt-6 mb-3 pb-2 border-b">Descripción</h3>
             <p className="text-gray-600 whitespace-pre-wrap">{activity.description}</p>
             
-            {activity.agreement?.institution && (
+            {displayInstitution && (
               <div className="mt-6">
                 <h3 className="font-medium text-gray-900 mb-3 pb-2 border-b">Institución</h3>
                 <div className="flex items-center gap-3">
-                  {activity.agreement.institution.logo_url ? (
+                  {displayInstitution.logo_url ? (
                     <img
-                      src={activity.agreement.institution.logo_url}
-                      alt={activity.agreement.institution.name}
+                      src={displayInstitution.logo_url}
+                      alt={displayInstitution.name}
                       className="w-10 h-10 rounded-full object-cover"
                     />
                   ) : (
@@ -470,15 +500,21 @@ const ActivityDetails: React.FC<ActivityDetailsProps> = ({
                     </div>
                   )}
                   <div>
-                    <p className="font-medium">{activity.agreement.institution.name}</p>
-                    {activity.agreement.institution.type && (
+                    <p className="font-medium">{displayInstitution.name}</p>
+                    {displayInstitution.type && (
                       <p className="text-sm text-blue-600">
-                        {activity.agreement.institution.type}
+                        {displayInstitution.type}
                       </p>
                     )}
-                    <p className="text-sm text-gray-500">
-                      Convenio activo desde {new Date(activity.agreement.start_date).toLocaleDateString()}
-                    </p>
+                    {activity.agreement ? (
+                      <p className="text-sm text-gray-500">
+                        Convenio activo desde {new Date(activity.agreement.start_date).toLocaleDateString()}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-gray-500">
+                        Institución sin convenio
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

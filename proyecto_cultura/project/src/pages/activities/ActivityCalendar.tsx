@@ -42,15 +42,18 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
   onCreateActivity
 }) => {
   const [activities, setActivities] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution },
+    direct_institution?: Institution
   })[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution },
+    direct_institution?: Institution
   })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedActivity, setSelectedActivity] = useState<(Activity & {
-    agreement?: Agreement & { institution?: Institution }
+    agreement?: Agreement & { institution?: Institution },
+    direct_institution?: Institution
   }) | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -107,12 +110,42 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
         query = query.eq('agreement_id', agreementId);
       }
 
-      const { data, error: fetchError } = await query;
+      const { data: activitiesWithAgreements, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
 
-      setActivities(data || []);
-      setFilteredActivities(data || []);
+      // For activities without agreements, fetch their direct institutions
+      const activitiesWithoutAgreements = activitiesWithAgreements?.filter(a => !a.agreement_id && a.institution_id) || [];
+      
+      let activitiesWithDirectInstitutions = [...(activitiesWithAgreements || [])];
+      
+      if (activitiesWithoutAgreements.length > 0) {
+        const institutionIds = activitiesWithoutAgreements.map(a => a.institution_id).filter(Boolean);
+        
+        if (institutionIds.length > 0) {
+          const { data: institutions, error: institutionsError } = await supabase
+            .from('institutions')
+            .select('*')
+            .in('id', institutionIds);
+          
+          if (institutionsError) throw institutionsError;
+          
+          // Attach direct institutions to activities
+          activitiesWithDirectInstitutions = activitiesWithAgreements?.map(activity => {
+            if (!activity.agreement_id && activity.institution_id) {
+              const directInstitution = institutions?.find(i => i.id === activity.institution_id);
+              return {
+                ...activity,
+                direct_institution: directInstitution || undefined
+              };
+            }
+            return activity;
+          }) || [];
+        }
+      }
+
+      setActivities(activitiesWithDirectInstitutions);
+      setFilteredActivities(activitiesWithDirectInstitutions);
     } catch (err) {
       const error = err as Error;
       setError('Error al cargar las actividades: ' + error.message);
@@ -141,9 +174,11 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
     }
 
     if (institutionTypeFilter !== 'all') {
-      filtered = filtered.filter(activity => 
-        activity.agreement?.institution?.type === institutionTypeFilter
-      );
+      filtered = filtered.filter(activity => {
+        // Check institution type from either agreement or direct institution
+        const institutionType = activity.agreement?.institution?.type || activity.direct_institution?.type;
+        return institutionType === institutionTypeFilter;
+      });
     }
 
     if (startDate && endDate) {
@@ -196,24 +231,36 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
   };
 
   const formatCalendarEvents = () => {
-    return filteredActivities.map(activity => ({
-      id: activity.id,
-      title: activity.title,
-      start: activity.scheduled_date,
-      end: new Date(new Date(activity.scheduled_date).getTime() + 3600000).toISOString(),
-      backgroundColor: getStatusColor(activity.status),
-      borderColor: getStatusColor(activity.status),
-      extendedProps: {
-        activity_type: activity.activity_type,
-        description: activity.description,
-        institution: activity.agreement?.institution?.name || 
-                    "Institución sin convenio", // Display fallback for institutions without agreement
-        institution_logo: activity.agreement?.institution?.logo_url,
-        status: activity.status,
-        municipality: activity.municipality,
-        institution_type: activity.agreement?.institution?.type
-      }
-    }));
+    return filteredActivities.map(activity => {
+      // Get institution info from either agreement or direct institution
+      const institutionName = activity.agreement?.institution?.name || 
+                              activity.direct_institution?.name || 
+                              "Institución sin convenio";
+      
+      const institutionLogo = activity.agreement?.institution?.logo_url || 
+                              activity.direct_institution?.logo_url;
+      
+      const institutionType = activity.agreement?.institution?.type || 
+                              activity.direct_institution?.type;
+      
+      return {
+        id: activity.id,
+        title: activity.title,
+        start: activity.scheduled_date,
+        end: new Date(new Date(activity.scheduled_date).getTime() + 3600000).toISOString(),
+        backgroundColor: getStatusColor(activity.status),
+        borderColor: getStatusColor(activity.status),
+        extendedProps: {
+          activity_type: activity.activity_type,
+          description: activity.description,
+          institution: institutionName,
+          institution_logo: institutionLogo,
+          status: activity.status,
+          municipality: activity.municipality,
+          institution_type: institutionType
+        }
+      };
+    });
   };
 
   const handleEventClick = (info: any) => {
@@ -260,8 +307,7 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
             image_url: finalImageUrl,
             is_modifiable: formData.status !== 'finalizado',
             updated_at: new Date().toISOString(),
-            agreement_id: formData.agreement_id || null,
-            institution_id: formData.institution_id || null
+            // Don't update agreement_id or institution_id as they should not be modifiable
           })
           .eq('id', selectedActivity.id)
           .select(`
@@ -271,7 +317,8 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
               institution:institutions (
                 id,
                 name,
-                logo_url
+                logo_url,
+                type
               )
             )
           `)
@@ -279,11 +326,17 @@ const ActivityCalendar: React.FC<ActivityCalendarProps> = ({
 
         if (updateError) throw updateError;
         
+        // Preserve the direct_institution if it exists
+        const updatedActivityWithDirectInst = {
+          ...updatedActivity,
+          direct_institution: selectedActivity.direct_institution
+        };
+        
         setActivities(prev => 
-          prev.map(activity => activity.id === selectedActivity.id ? updatedActivity : activity)
+          prev.map(activity => activity.id === selectedActivity.id ? updatedActivityWithDirectInst : activity)
         );
         
-        setSelectedActivity(updatedActivity);
+        setSelectedActivity(updatedActivityWithDirectInst);
       }
       
       setIsEditModalOpen(false);
