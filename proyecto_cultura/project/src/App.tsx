@@ -8,7 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Institutions from './pages/Institutions';
 import Agreements from './pages/Agreements';
 import Activities from './pages/ActivityManagement';
-import Reports from './pages/Reports';
+import UserManag from './pages/UserManag';
 
 const App: React.FC = () => {
   return (
@@ -22,7 +22,7 @@ const App: React.FC = () => {
             <Route path="institutions" element={<Institutions />} />
             <Route path="agreements" element={<Agreements />} />
             <Route path="activities" element={<Activities />} />
-            <Route path="reports" element={<Reports />} />
+            <Route path="UserManag" element={<UserManag />} />
           </Route>
         </Routes>
       </Router>

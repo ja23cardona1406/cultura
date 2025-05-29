@@ -62,7 +62,7 @@ const Sidebar: React.FC = () => {
     { icon: Building2, label: 'Instituciones', path: '/institutions' },
     { icon: FileText, label: 'Convenios', path: '/agreements' },
     { icon: Calendar, label: 'Actividades', path: '/activities' },
-    { icon: BarChart2, label: 'Reportes', path: '/reports' },
+    { icon: BarChart2, label: 'manejo rol', path: '/UserManag' },
   ];
 
   // Contenido del sidebar que será reutilizado
