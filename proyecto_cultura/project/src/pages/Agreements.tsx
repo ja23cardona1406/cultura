@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Eye, Trash2, Clock, File } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FileText, Plus, Eye, Trash2, Clock, File, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Agreement, Institution } from '../types';
 import AgreementForm from './agreements/AgreementForm';
@@ -15,6 +15,7 @@ export function Agreements() {
   const [isDetailsView, setIsDetailsView] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Responsive design hooks
   const isMobile = useIsMobile();
@@ -24,6 +25,18 @@ export function Agreements() {
   useEffect(() => {
     fetchAgreements();
   }, []);
+
+  // Filtrar agreements basado en el término de búsqueda
+  const filteredAgreements = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return agreements;
+    }
+    
+    return agreements.filter(agreement => 
+      agreement.institution?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      agreement.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [agreements, searchTerm]);
 
   const fetchAgreements = async () => {
     try {
@@ -266,6 +279,22 @@ const deleteAgreementPdfs = async (agreementData: Agreement) => {
         </button>
       </div>
 
+      {/* Buscador */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar convenios por nombre de institución o descripción..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+            />
+          </div>
+        </div>
+      </div>
+
       {error && (
         <div className="p-4 bg-red-100 text-red-700 rounded-md">
           {error}
@@ -275,71 +304,92 @@ const deleteAgreementPdfs = async (agreementData: Agreement) => {
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
           <div className="space-y-4">
-            {agreements.length === 0 ? (
+            {filteredAgreements.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-500 mb-4">No hay convenios registrados</p>
-                <button 
-                  onClick={() => setIsModalOpen(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar Convenio
-                </button>
+                {searchTerm ? (
+                  <div>
+                    <p className="text-gray-500 mb-2">No se encontraron convenios que coincidan con "{searchTerm}"</p>
+                    <button 
+                      onClick={() => setSearchTerm('')}
+                      className="text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Limpiar búsqueda
+                    </button>
+                  </div>
+                ) : agreements.length === 0 ? (
+                  <div>
+                    <p className="text-gray-500 mb-4">No hay convenios registrados</p>
+                    <button 
+                      onClick={() => setIsModalOpen(true)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 inline-flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar Convenio
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
-              agreements.map((agreement) => {
-                const pdfCount = getPdfCount(agreement);
-                return (
-                  <div key={agreement.id} 
-                    className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
-                  >
-                    <div className="flex items-center">
-                      <FileText className="h-5 w-5 text-gray-500 mr-3" />
-                      <div>
-                        <h3 className="font-medium text-gray-900">{agreement.institution?.name}</h3>
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
-                            <span>Inicio: {new Date(agreement.start_date).toLocaleDateString()}</span>
-                          </div>
-                          {pdfCount > 0 && (
+              <>
+                {searchTerm && (
+                  <div className="text-sm text-gray-600 mb-4">
+                    Mostrando {filteredAgreements.length} de {agreements.length} convenio{agreements.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+                {filteredAgreements.map((agreement) => {
+                  const pdfCount = getPdfCount(agreement);
+                  return (
+                    <div key={agreement.id} 
+                      className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200`}
+                    >
+                      <div className="flex items-center">
+                        <FileText className="h-5 w-5 text-gray-500 mr-3" />
+                        <div>
+                          <h3 className="font-medium text-gray-900">{agreement.institution?.name}</h3>
+                          <div className="flex items-center gap-4 text-sm text-gray-500">
                             <div className="flex items-center gap-1">
-                              <File className="h-4 w-4" />
-                              <span>{pdfCount} documento{pdfCount !== 1 ? 's' : ''} PDF</span>
+                              <Clock className="h-4 w-4" />
+                              <span>Inicio: {new Date(agreement.start_date).toLocaleDateString()}</span>
                             </div>
-                          )}
+                            {pdfCount > 0 && (
+                              <div className="flex items-center gap-1">
+                                <File className="h-4 w-4" />
+                                <span>{pdfCount} documento{pdfCount !== 1 ? 's' : ''} PDF</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          agreement.status === 'active' 
+                            ? 'text-green-700 bg-green-100' 
+                            : 'text-red-700 bg-red-100'
+                        }`}>
+                          {agreement.status === 'active' ? 'Activo' : 'Finalizado'}
+                        </span>
+                        <button 
+                          onClick={() => {
+                            setSelectedAgreement(agreement);
+                            setIsDetailsView(true);
+                          }}
+                          className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
+                        >
+                          <Eye className="h-4 w-4" />
+                          {!isMobile && 'Ver Detalles'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAgreement(agreement.id)}
+                          disabled={isDeleting}
+                          className="flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className={`flex items-center gap-3 ${isMobile ? 'mt-3 ml-8' : ''}`}>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        agreement.status === 'active' 
-                          ? 'text-green-700 bg-green-100' 
-                          : 'text-red-700 bg-red-100'
-                      }`}>
-                        {agreement.status === 'active' ? 'Activo' : 'Finalizado'}
-                      </span>
-                      <button 
-                        onClick={() => {
-                          setSelectedAgreement(agreement);
-                          setIsDetailsView(true);
-                        }}
-                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
-                      >
-                        <Eye className="h-4 w-4" />
-                        {!isMobile && 'Ver Detalles'}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteAgreement(agreement.id)}
-                        disabled={isDeleting}
-                        className="flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </>
             )}
           </div>
         </div>

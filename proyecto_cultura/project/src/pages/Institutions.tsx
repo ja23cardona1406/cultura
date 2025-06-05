@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, ChevronRight, Filter } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, ChevronRight, Filter, Search, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Institution, Member, SupabaseError, InstitutionType } from '../types';
 import { PostgrestError } from '@supabase/supabase-js';
-import InstitutionCard from './institutions/InstitutionCard';
 import InstitutionDetails from './institutions/InstitutionDetails';
 import MemberDetails from './institutions/MemberDetails';
 import InstitutionForm from './institutions/InstitutionForm';
@@ -27,9 +26,9 @@ export function Institutions() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<InstitutionType | 'all'>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const isMobile = useMediaQuery('(max-width: 639px)');
-  const isTablet = useMediaQuery('(min-width: 640px) and (max-width: 1023px)');
 
   // Opciones de filtro
   const filterOptions: Array<{ value: InstitutionType | 'all'; label: string }> = [
@@ -56,14 +55,33 @@ export function Institutions() {
     }
   }, [selectedInstitution]);
 
-  // Efecto para filtrar las instituciones cuando cambia el filtro o la lista de instituciones
+  // Efecto para filtrar las instituciones cuando cambia el filtro, búsqueda o la lista de instituciones
   useEffect(() => {
-    if (selectedFilter === 'all') {
-      setFilteredInstitutions(institutions);
-    } else {
-      setFilteredInstitutions(institutions.filter(institution => institution.type === selectedFilter));
+    let filtered = institutions;
+
+    // Aplicar filtro por tipo
+    if (selectedFilter !== 'all') {
+      filtered = filtered.filter(institution => institution.type === selectedFilter);
     }
-  }, [institutions, selectedFilter]);
+
+    // Aplicar filtro de búsqueda
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(institution => 
+        institution.name.toLowerCase().includes(query) ||
+        institution.email.toLowerCase().includes(query) ||
+        institution.nit.toLowerCase().includes(query) ||
+        institution.address.toLowerCase().includes(query) ||
+        (institution.type && institution.type.toLowerCase().includes(query))
+      );
+    }
+
+    setFilteredInstitutions(filtered);
+  }, [institutions, selectedFilter, searchQuery]);
+
+  const clearSearch = () => {
+    setSearchQuery('');
+  };
 
   const checkAuth = async () => {
     try {
@@ -180,7 +198,7 @@ export function Institutions() {
           : `members/${fileName}`;
       }
 
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('imagenes')
         .upload(filePath, file);
 
@@ -436,10 +454,7 @@ export function Institutions() {
   };
 
   const getFilteredCount = () => {
-    if (selectedFilter === 'all') {
-      return institutions.length;
-    }
-    return institutions.filter(inst => inst.type === selectedFilter).length;
+    return filteredInstitutions.length;
   };
 
   if (isLoading) {
@@ -558,6 +573,30 @@ export function Institutions() {
         </div>
       )}
 
+      {/* Buscador */}
+      <div className="bg-white rounded-lg shadow-md p-4">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Buscar por nombre, email, NIT, dirección o tipo..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200"
+          />
+          {searchQuery && (
+            <button
+              onClick={clearSearch}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors duration-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow-md p-4">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
@@ -637,7 +676,7 @@ export function Institutions() {
                   </>
                 ) : (
                   <p className="text-gray-500">
-                    No hay instituciones que coincidan con el filtro seleccionado
+                    No hay instituciones que coincidan con los filtros aplicados
                   </p>
                 )}
               </div>

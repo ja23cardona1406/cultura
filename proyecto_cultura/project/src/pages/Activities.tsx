@@ -137,15 +137,42 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
     }
   };
 
+  // Enhanced search function
   const applyFilters = () => {
     let filtered = [...activities];
 
     if (searchTerm) {
-      filtered = filtered.filter(activity => 
-        activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        activity.activity_type.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(activity => {
+        // Buscar en título
+        const titleMatch = activity.title.toLowerCase().includes(searchLower);
+        
+        // Buscar en descripción
+        const descriptionMatch = activity.description.toLowerCase().includes(searchLower);
+        
+        // Buscar en tipo de actividad
+        const typeMatch = activity.activity_type.toLowerCase().includes(searchLower);
+        
+        // Buscar en municipio
+        const municipalityMatch = activity.municipality?.toLowerCase().includes(searchLower) || false;
+        
+        // Buscar en nombre de institución
+        const institutionNameMatch = activity.institution?.name?.toLowerCase().includes(searchLower) || false;
+        
+        // Buscar en tipo de institución
+        const institutionTypeMatch = activity.institution?.type?.toLowerCase().includes(searchLower) || false;
+        
+        // Buscar en estado (convertir el estado a texto legible)
+        const statusText = getStatusText(activity.status).toLowerCase();
+        const statusMatch = statusText.includes(searchLower);
+        
+        // También buscar por el valor crudo del estado
+        const rawStatusMatch = activity.status.toLowerCase().includes(searchLower);
+        
+        // Retornar true si coincide con cualquier campo
+        return titleMatch || descriptionMatch || typeMatch || municipalityMatch || 
+               institutionNameMatch || institutionTypeMatch || statusMatch || rawStatusMatch;
+      });
     }
 
     if (statusFilter !== 'all') {
@@ -594,18 +621,7 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className={`p-${isMobile ? '3' : '4'} border-b`}>
             <div className={`flex flex-col ${isMobile ? 'gap-3' : 'md:flex-row md:items-center gap-4'}`}>
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Buscar actividades..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="block w-full pl-10 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+              
               <div className={`flex ${isMobile ? 'flex-col' : 'flex-wrap'} gap-2`}>
                 <select
                   value={statusFilter}
@@ -685,8 +701,31 @@ const ActivityList: React.FC<ActivityListProps> = ({ agreementId }) => {
                   <Download className="h-4 w-4" />
                   <span>Generar Reporte</span>
                 </button>
+                
+                {/* Enhanced search input */}
+                <div className="relative flex-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre, institución, municipio o estado..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="block w-full pl-10 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
               </div>
             </div>
+            
+            {/* Search indicator */}
+            {searchTerm && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                <span className="text-xs text-gray-500">
+                  Buscando: <span className="font-medium text-gray-700">"{searchTerm}"</span> en nombre, institución, municipio y estado
+                </span>
+              </div>
+            )}
             
             {isFiltering && (
               <div className="mt-3 flex justify-end">
