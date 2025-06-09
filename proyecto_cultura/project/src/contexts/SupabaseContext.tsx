@@ -1,8 +1,10 @@
 import React, { createContext, useContext } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseClient } from '../lib/supabase';
+import { Database } from '../types';
 
 type SupabaseContextType = {
-  supabase: SupabaseClient;
+  supabase: SupabaseClient<Database>;
 };
 
 const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined);
@@ -16,11 +18,8 @@ export function useSupabase() {
 }
 
 export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Create a Supabase client with anon key
-  const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
+  // Usar la instancia singleton
+  const supabase = getSupabaseClient();
 
   const value = {
     supabase,

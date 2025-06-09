@@ -7,9 +7,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type UserRole = 'admin' | 'dian' | 'institucion';
+export type UserRole = 'admin' | 'dian' | 'institucion' | 'user';
 export type AgreementStatus = 'active' | 'completed' | 'pending' | 'cancelled' | 'finished';
-export type ActivityStatus =  'en_proceso' | 'finalizado' | 'cancelado';
+export type ActivityStatus = 'en_proceso' | 'finalizado' | 'cancelado';
 export type InstitutionType =
   | 'NAF'
   | 'Cultura de la contribución en la escuela'
@@ -31,10 +31,17 @@ export type Municipality =
 // Definiciones de tipos de entidades
 export type User = {
   id: string;
-  email: string;
+  email?: string;
   full_name: string;
   role: UserRole;
   avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Profile = {
+  id: string;
+  role: UserRole;
   created_at: string;
   updated_at: string;
 };
@@ -144,8 +151,13 @@ export type Database = {
     Tables: {
       users: {
         Row: User;
-        Insert: Omit<User, 'id' | 'created_at'>;
-        Update: Partial<Omit<User, 'id' | 'created_at'>>;
+        Insert: Omit<User, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Profile, 'created_at' | 'updated_at'>>;
       };
       institutions: {
         Row: Institution;
@@ -213,7 +225,8 @@ export type Database = {
           description: string;
           created_at?: string;
           updated_at?: string;
-          end_date: string | null;
+          end_date?: string | null;
+          pruebas_convenio?: string | null;
         };
         Update: {
           id?: string;
@@ -224,6 +237,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           end_date?: string | null;
+          pruebas_convenio?: string | null;
         };
       };
       activities: {
@@ -231,6 +245,7 @@ export type Database = {
         Insert: {
           id?: string;
           agreement_id: string;
+          institution_id: string;
           title: string;
           activity_type: string;
           scheduled_date: string;
@@ -248,6 +263,7 @@ export type Database = {
         Update: {
           id?: string;
           agreement_id?: string;
+          institution_id?: string;
           title?: string;
           activity_type?: string;
           scheduled_date?: string;

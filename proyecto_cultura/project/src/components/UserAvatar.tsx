@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'lucide-react';
-import { User as UserType } from './UserManagement';
+import { User as UserType } from '../types';
 
 interface UserAvatarProps {
   user: UserType;
@@ -26,7 +26,7 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ user, size = 'md' }) => {
         <img
           src={user.avatar_url}
           alt={user.full_name}
-          className={`${sizeClasses[size]} rounded-full object-cover`}
+          className={`${sizeClasses[size]} rounded-full object-cover bg-gray-100`}
         />
       ) : (
         <div className={`${sizeClasses[size]} rounded-full bg-gray-200 flex items-center justify-center`}>

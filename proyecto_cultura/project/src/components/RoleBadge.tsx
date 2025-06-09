@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserRole } from './UserManagement';
+import { UserRole } from '../types';
 
 interface RoleBadgeProps {
   role: UserRole;
@@ -21,7 +21,7 @@ const RoleBadge: React.FC<RoleBadgeProps> = ({ role }) => {
   };
 
   return (
-    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${badgeClasses[role]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeClasses[role]}`}>
       {roleDisplay[role]}
     </span>
   );

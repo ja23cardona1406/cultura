@@ -4,8 +4,6 @@ import {
   UserPlus, 
   Edit2, 
   Trash2, 
-  X, 
-  User,
   Loader2,
   AlertCircle,
   RefreshCw
@@ -16,21 +14,11 @@ import CreateUserModal from './modals/CreateUserModal';
 import EditUserModal from './modals/EditUserModal';
 import UserAvatar from './UserAvatar';
 import RoleBadge from './RoleBadge';
-
-export type UserRole = 'admin' | 'dian' | 'institucion' | 'user';
-
-export interface User {
-  id: string;
-  email?: string;
-  full_name: string;
-  role: UserRole;
-  avatar_url: string;
-  created_at?: string;
-}
+import { User, UserRole } from '../types';
 
 const UserManagement: React.FC = () => {
   const { supabase } = useSupabase();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<(User & { email?: string })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,16 +35,31 @@ const UserManagement: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      // Fetch users with their profiles
+      // Obtener todos los usuarios de la tabla users
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('*');
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (userError) throw userError;
 
-      // Since we're using the client SDK, we need to query auth.users separately
-      // This would be done via admin API in a real backend
-      setUsers(userData as User[]);
+      // Obtener información de auth.users para emails
+      const { data: authData, error: authError } = await supabase.auth.admin.listUsers();
+      
+      // Combinar datos si tenemos acceso (solo para admins)
+      let combinedUsers = userData || [];
+      
+      if (!authError && authData?.users) {
+        combinedUsers = (userData || []).map(user => {
+          const authUser = authData.users.find(auth => auth.id === user.id);
+          return {
+            ...user,
+            email: authUser?.email || 'No disponible'
+          };
+        });
+      }
+
+      setUsers(combinedUsers);
     } catch (err) {
       console.error('Error fetching users:', err);
       setError('Error al cargar usuarios: ' + (err instanceof Error ? err.message : String(err)));
@@ -77,12 +80,34 @@ const UserManagement: React.FC = () => {
     }
 
     try {
-      const { error: deleteError } = await supabase
+      // Eliminar de la tabla users
+      const { error: deleteUserError } = await supabase
         .from('users')
         .delete()
         .eq('id', userId);
 
-      if (deleteError) throw deleteError;
+      if (deleteUserError) throw deleteUserError;
+
+      // Eliminar de profiles
+      const { error: deleteProfileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (deleteProfileError) {
+        console.warn('Error deleting profile:', deleteProfileError);
+      }
+
+      // Eliminar avatar si existe
+      const user = users.find(u => u.id === userId);
+      if (user?.avatar_url) {
+        const avatarPath = user.avatar_url.split('/').pop();
+        if (avatarPath) {
+          await supabase.storage
+            .from('imagenes')
+            .remove([`profile/${user.full_name}/${avatarPath}`]);
+        }
+      }
 
       toast.success('Usuario eliminado correctamente');
       setUsers(users.filter(user => user.id !== userId));
@@ -128,7 +153,7 @@ const UserManagement: React.FC = () => {
         <div className="flex items-center">
           <h2 className="text-2xl font-semibold text-gray-900 flex items-center">
             <Users className="h-6 w-6 mr-2" />
-            Gestión de Usuarios
+            Gestión de Usuarios ({users.length})
           </h2>
           <button 
             onClick={handleRefresh} 
@@ -162,6 +187,9 @@ const UserManagement: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Rol
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Creado
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Acciones
                 </th>
@@ -170,7 +198,7 @@ const UserManagement: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                     No hay usuarios para mostrar
                   </td>
                 </tr>
@@ -191,10 +219,13 @@ const UserManagement: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{user.email}</div>
+                      <div className="text-sm text-gray-900">{user.email || 'No disponible'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <RoleBadge role={user.role} />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(user.created_at).toLocaleDateString('es-ES')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
@@ -243,3 +274,4 @@ const UserManagement: React.FC = () => {
 };
 
 export default UserManagement;
+export type { UserRole, User };
