@@ -1,20 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, X, Eye, EyeOff, Key, Mail } from 'lucide-react';
-import Modal from './Modal';
-import { User, UserRole } from '../../types';
+import { X, User, Mail, Shield, Save, AlertCircle, Upload, Eye, EyeOff, Key } from 'lucide-react';
+import { User as UserType, UserRole } from '../../types';
 import { useSupabase } from '../../contexts/SupabaseContext';
 import toast from 'react-hot-toast';
 
 interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: User;
+  user: UserType;
   onUserUpdated: () => void;
+  canEditRole?: boolean; // Control para editar rol
 }
 
-const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, onUserUpdated }) => {
+const EditUserModal: React.FC<EditUserModalProps> = ({
+  isOpen,
+  onClose,
+  user,
+  onUserUpdated,
+  canEditRole = false
+}) => {
   const { supabase } = useSupabase();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(user.avatar_url);
   const [showPasswordSection, setShowPasswordSection] = useState(false);
@@ -23,10 +29,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
-  
+
   const [formData, setFormData] = useState({
     full_name: user.full_name,
-    role: user.role
+    email: user.email,
+    role: user.role,
+    avatar_url: user.avatar_url || ''
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -68,9 +76,16 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
     };
 
     if (isOpen) {
+      setFormData({
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        avatar_url: user.avatar_url || ''
+      });
+      setImagePreview(user.avatar_url);
       fetchUserEmail();
     }
-  }, [isOpen, user.id, user.email, supabase]);
+  }, [isOpen, user, supabase]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,26 +140,16 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
     }
 
     try {
-      // Validar que tengamos el email del usuario
       if (!userEmail) {
         throw new Error('No se encontró el email del usuario');
       }
 
-      // Obtener el token de la sesión actual
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
         throw new Error('No hay sesión activa');
       }
 
-      console.log('Calling edge function with:', {
-        userId: user.id,
-        userEmail: userEmail,
-        hasCurrentPassword: !!passwordData.currentPassword,
-        hasNewPassword: !!passwordData.newPassword
-      });
-
-      // Llamar a la función edge con headers CORS apropiados
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/change-user-password`,
         {
@@ -163,27 +168,20 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         }
       );
 
-      console.log('Response status:', response.status);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', errorText);
-        
         let errorData;
         try {
           errorData = JSON.parse(errorText);
         } catch {
           errorData = { error: errorText };
         }
-        
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('Password changed successfully:', result);
       toast.success('Contraseña cambiada exitosamente');
 
-      // Limpiar formulario
       setPasswordData({
         currentPassword: '',
         newPassword: '',
@@ -194,10 +192,8 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
 
     } catch (error) {
       console.error('Error changing password:', error);
-      
       const errorMessage = error instanceof Error ? error.message : 'Error al cambiar la contraseña';
       toast.error(errorMessage);
-      
       return false;
     }
   };
@@ -228,15 +224,9 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.full_name) {
-      toast.error('El nombre es requerido');
-      return;
-    }
+    setLoading(true);
 
     try {
-      setIsSubmitting(true);
-      
       // Cambiar contraseña si se proporcionó
       let passwordChanged = false;
       if (showPasswordSection && passwordData.currentPassword) {
@@ -253,23 +243,45 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         avatarUrl = await uploadAvatar(imageFile);
       }
 
-      // Usar la función segura de actualización
-      const { data, error } = await supabase
-        .rpc('update_user_safe', {
-          user_id: user.id,
-          new_full_name: formData.full_name,
-          new_role: formData.role,
-          new_avatar_url: avatarUrl
-        });
+      // Preparar los datos a actualizar
+      const updateData: any = {
+        full_name: formData.full_name.trim(),
+        email: formData.email.trim(),
+        avatar_url: avatarUrl || null,
+        updated_at: new Date().toISOString()
+      };
+
+      // Solo incluir el rol si el usuario tiene permisos para editarlo
+      if (canEditRole) {
+        updateData.role = formData.role;
+      }
+
+      // Intentar usar la función segura primero, sino usar update directo
+      let error;
+      if (canEditRole) {
+        const { data, error: rpcError } = await supabase
+          .rpc('update_user_safe', {
+            user_id: user.id,
+            new_full_name: formData.full_name,
+            new_role: formData.role,
+            new_avatar_url: avatarUrl
+          });
+
+        if (rpcError || data?.error) {
+          error = rpcError || new Error(data.error);
+        }
+      } else {
+        const { error: updateError } = await supabase
+          .from('users')
+          .update(updateData)
+          .eq('id', user.id);
+        
+        error = updateError;
+      }
 
       if (error) {
         console.error('Error updating user:', error);
         throw error;
-      }
-
-      // Verificar si la función retornó un error
-      if (data?.error) {
-        throw new Error(data.error);
       }
 
       const successMessage = passwordChanged 
@@ -277,9 +289,9 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         : 'Usuario actualizado correctamente';
       
       toast.success(successMessage);
-      onClose();
       onUserUpdated();
-      
+      onClose();
+
       // Reset password fields
       setPasswordData({
         currentPassword: '',
@@ -287,251 +299,337 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         confirmPassword: ''
       });
       setShowPasswordSection(false);
-    } catch (err) {
-      console.error('Error updating user:', err);
-      toast.error('Error al actualizar usuario: ' + (err instanceof Error ? err.message : String(err)));
+    } catch (error) {
+      console.error('Error in handleSubmit:', error);
+      if (error instanceof Error) {
+        toast.error(`Error al actualizar usuario: ${error.message}`);
+      } else {
+        toast.error('Error desconocido al actualizar usuario');
+      }
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  // Mostrar un mensaje si no hay email disponible
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  if (!isOpen) return null;
+
   const canChangePassword = userEmail.length > 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Editar Usuario">
-      <div className="max-h-[70vh] overflow-y-auto pr-2">
-        <form id="edit-user-form" onSubmit={handleSubmit} className="space-y-4">
-          {/* Avatar upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Foto de Perfil
-            </label>
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                {imagePreview ? (
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="h-20 w-20 rounded-full object-cover border-2 border-gray-300"
-                  />
-                ) : (
-                  <div className="h-20 w-20 rounded-full bg-gray-200 flex items-center justify-center border-2 border-gray-300">
-                    <Upload className="h-8 w-8 text-gray-400" />
-                  </div>
-                )}
-                {imagePreview && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview(null);
-                    }}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-lg border border-blue-300 transition-colors">
-                Cambiar Imagen
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                  disabled={isSubmitting}
-                />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
+              <User className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {canEditRole ? 'Editar Usuario' : 'Editar Mi Perfil'}
+              </h2>
+              <p className="text-sm text-gray-600">
+                {canEditRole 
+                  ? 'Modifica la información del usuario'
+                  : 'Actualiza tu información personal'
+                }
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <form className="space-y-4">
+            {/* Avatar upload - Más compacto */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Foto de Perfil
               </label>
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="edit_full_name" className="block text-sm font-medium text-gray-700">
-              Nombre Completo *
-            </label>
-            <input
-              type="text"
-              id="edit_full_name"
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              required
-              className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-              disabled={isSubmitting}
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="edit_role" className="block text-sm font-medium text-gray-700">
-              Rol
-            </label>
-            <select
-              id="edit_role"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-              required
-              className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-              disabled={isSubmitting}
-            >
-              <option value="user">Usuario</option>
-              <option value="admin">Administrador</option>
-              <option value="dian">DIAN</option>
-              <option value="institucion">Institución</option>
-            </select>
-          </div>
-
-          {/* Password Section */}
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                <Key className="h-5 w-5 mr-2" />
-                Cambiar Contraseña
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowPasswordSection(!showPasswordSection)}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
-                disabled={!canChangePassword}
-              >
-                {showPasswordSection ? 'Cancelar' : 'Cambiar'}
-              </button>
-            </div>
-
-            {!canChangePassword && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
-                <p className="text-sm text-yellow-800">
-                  No se puede cambiar la contraseña: este usuario no tiene email asociado.
-                </p>
+              <div className="flex items-center space-x-3">
+                <div className="relative">
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="h-16 w-16 rounded-full object-cover border-2 border-gray-300"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center border-2 border-gray-300">
+                      <Upload className="h-6 w-6 text-gray-400" />
+                    </div>
+                  )}
+                  {imagePreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageFile(null);
+                        setImagePreview(null);
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-lg border border-blue-300 transition-colors text-sm">
+                  Cambiar
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    disabled={loading}
+                  />
+                </label>
               </div>
-            )}
+            </div>
 
-            {showPasswordSection && canChangePassword && (
-              <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
-                <div>
-                  <label htmlFor="current_password" className="block text-sm font-medium text-gray-700">
-                    Contraseña Actual *
-                  </label>
-                  <div className="mt-1 relative">
-                    <input
-                      type={showCurrentPassword ? "text" : "password"}
-                      id="current_password"
-                      value={passwordData.currentPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                      className="block w-full px-3 py-2 pr-10 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-                      disabled={isSubmitting}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    >
-                      {showCurrentPassword ? (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                </div>
+            {/* Nombre completo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre completo *
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={formData.full_name}
+                  onChange={(e) => handleInputChange('full_name', e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Ingresa el nombre completo"
+                  required
+                />
+              </div>
+            </div>
 
-                <div>
-                  <label htmlFor="new_password" className="block text-sm font-medium text-gray-700">
-                    Nueva Contraseña *
-                  </label>
-                  <div className="mt-1 relative">
-                    <input
-                      type={showNewPassword ? "text" : "password"}
-                      id="new_password"
-                      value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                      className="block w-full px-3 py-2 pr-10 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-                      disabled={isSubmitting}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    >
-                      {showNewPassword ? (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                </div>
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Correo electrónico *
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="correo@ejemplo.com"
+                  required
+                />
+              </div>
+            </div>
 
-                <div>
-                  <label htmlFor="confirm_password" className="block text-sm font-medium text-gray-700">
-                    Confirmar Nueva Contraseña *
-                  </label>
-                  <div className="mt-1 relative">
-                    <input
-                      type={showConfirmPassword ? "text" : "password"}
-                      id="confirm_password"
-                      value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                      className="block w-full px-3 py-2 pr-10 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-                      disabled={isSubmitting}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                  <span className="text-sm text-gray-600">
-                    ¿No recuerda la contraseña actual?
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleSendPasswordResetEmail}
-                    disabled={isSendingResetEmail || !userEmail}
-                    className="flex items-center gap-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50"
+            {/* Rol - Mostrar según permisos */}
+            {canEditRole ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rol *
+                </label>
+                <div className="relative">
+                  <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <select
+                    value={formData.role}
+                    onChange={(e) => handleInputChange('role', e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+                    required
                   >
-                    <Mail className="h-4 w-4" />
-                    {isSendingResetEmail ? 'Enviando...' : 'Enviar Email'}
-                  </button>
+                    <option value="user">Usuario</option>
+                    <option value="admin">Administrador</option>
+                    <option value="dian">DIAN</option>
+                    <option value="institucion">Institución</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rol actual
+                </label>
+                <div className="flex items-center space-x-2 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                  <Shield className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-700">
+                    {formData.role === 'admin' && 'Administrador'}
+                    {formData.role === 'user' && 'Usuario'}
+                    {formData.role === 'dian' && 'DIAN'}
+                    {formData.role === 'institucion' && 'Institución'}
+                  </span>
+                </div>
+                <div className="flex items-center mt-2 text-sm text-amber-600">
+                  <AlertCircle className="h-4 w-4 mr-1" />
+                  <span>Solo los administradores pueden cambiar roles</span>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Botones dentro del formulario */}
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t bg-white sticky bottom-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-              disabled={isSubmitting}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex items-center"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  Procesando...
-                </>
-              ) : 'Guardar Cambios'}
-            </button>
-          </div>
-        </form>
+            {/* Password Section - Más compacta */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-medium text-gray-900 flex items-center">
+                  <Key className="h-4 w-4 mr-2" />
+                  Cambiar Contraseña
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordSection(!showPasswordSection)}
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+                  disabled={!canChangePassword}
+                >
+                  {showPasswordSection ? 'Cancelar' : 'Cambiar'}
+                </button>
+              </div>
+
+              {!canChangePassword && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-3">
+                  <p className="text-sm text-yellow-800">
+                    No se puede cambiar la contraseña: este usuario no tiene email asociado.
+                  </p>
+                </div>
+              )}
+
+              {showPasswordSection && canChangePassword && (
+                <div className="space-y-3 bg-gray-50 p-3 rounded-lg">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contraseña Actual *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={passwordData.currentPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                        className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nueva Contraseña *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                        className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Confirmar Nueva Contraseña *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                        className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                    <span className="text-xs text-gray-600">
+                      ¿No recuerda la contraseña actual?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendPasswordResetEmail}
+                      disabled={isSendingResetEmail || !userEmail}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50"
+                    >
+                      <Mail className="h-3 w-3" />
+                      {isSendingResetEmail ? 'Enviando...' : 'Enviar Email'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Footer - Fijo en la parte inferior */}
+        <div className="flex items-center justify-end space-x-3 p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          >
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                Guardar cambios
+              </>
+            )}
+          </button>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 };
 

@@ -9,7 +9,8 @@ import {
   UserPlus,
   Shield,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  User as UserIcon
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { useSupabase } from '../contexts/SupabaseContext';
@@ -34,20 +35,28 @@ const UserManagement: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Verificar si el usuario actual es admin
+  const isCurrentUserAdmin = currentUser?.role === 'admin';
+
   const fetchUsers = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Usar la función de base de datos para obtener usuarios
-      const { data, error } = await supabase.from('users').select('*');
+      let query = supabase.from('users').select('*');
+      
+      // Si no es admin, solo mostrar su propio usuario
+      if (!isCurrentUserAdmin && currentUser?.id) {
+        query = query.eq('id', currentUser.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching users:', error);
         
-        // Si es un error de permisos, mostrar mensaje específico
         if (error.code === '42501' || error.message?.includes('permission')) {
-          setError('No tienes permisos suficientes para ver la lista de usuarios. Solo los administradores pueden acceder a esta funcionalidad.');
+          setError('No tienes permisos suficientes para ver la lista de usuarios.');
           return;
         }
         
@@ -59,7 +68,6 @@ const UserManagement: React.FC = () => {
         return;
       }
 
-      // Transformar los datos al formato esperado
       const transformedUsers: User[] = data.map((user: any) => ({
         id: user.id,
         email: user.email || 'No disponible',
@@ -89,7 +97,7 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [currentUser?.id, isCurrentUserAdmin]);
 
   // Cerrar dropdown cuando se hace click fuera
   useEffect(() => {
@@ -164,9 +172,8 @@ const UserManagement: React.FC = () => {
     });
   };
 
-  // Función para determinar la posición del dropdown
   const getDropdownPosition = (index: number, totalUsers: number) => {
-    const isLastRows = index >= totalUsers - 2; // Últimas 2 filas
+    const isLastRows = index >= totalUsers - 2;
     return isLastRows ? 'bottom-full mb-2' : 'top-full mt-2';
   };
 
@@ -204,11 +211,22 @@ const UserManagement: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center space-x-3">
           <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
-            <Users className="h-6 w-6 text-blue-600" />
+            {isCurrentUserAdmin ? (
+              <Users className="h-6 w-6 text-blue-600" />
+            ) : (
+              <UserIcon className="h-6 w-6 text-blue-600" />
+            )}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Gestión de Usuarios</h1>
-            <p className="text-sm text-gray-600">Administra los usuarios del sistema</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isCurrentUserAdmin ? 'Gestión de Usuarios' : 'Mi Perfil'}
+            </h1>
+            <p className="text-sm text-gray-600">
+              {isCurrentUserAdmin 
+                ? 'Administra los usuarios del sistema' 
+                : 'Administra tu información personal'
+              }
+            </p>
           </div>
         </div>
         <div className="mt-4 sm:mt-0 flex space-x-3">
@@ -219,170 +237,233 @@ const UserManagement: React.FC = () => {
             <RefreshCw className="h-4 w-4 mr-2" />
             Actualizar
           </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <UserPlus className="h-4 w-4 mr-2" />
-            Agregar Usuario
-          </button>
+          {isCurrentUserAdmin && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Agregar Usuario
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar por nombre o email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+      {/* Filters - Solo mostrar para admins */}
+      {isCurrentUserAdmin && (
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre o email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </div>
-          </div>
-          <div className="sm:w-48">
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-              >
-                <option value="all">Todos los roles</option>
-                <option value="admin">Administrador</option>
-                <option value="user">Usuario</option>
-                <option value="dian">DIAN</option>
-                <option value="institucion">Institución</option>
-              </select>
+            <div className="sm:w-48">
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+                >
+                  <option value="all">Todos los roles</option>
+                  <option value="admin">Administrador</option>
+                  <option value="user">Usuario</option>
+                  <option value="dian">DIAN</option>
+                  <option value="institucion">Institución</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Users Table */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-        {filteredUsers.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">
-              {searchTerm || roleFilter !== 'all' 
-                ? 'No se encontraron usuarios con los filtros aplicados' 
-                : 'No hay usuarios registrados'}
-            </p>
+      {/* Vista diferente para no-admins */}
+      {!isCurrentUserAdmin && users.length > 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-medium text-gray-900">Información Personal</h2>
+            <button
+              onClick={() => handleEditUser(users[0])}
+              className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Editar Perfil
+            </button>
           </div>
-        ) : (
-          // Contenedor con scroll horizontal Y vertical
-          <div className="overflow-auto max-h-[70vh]" style={{ scrollbarWidth: 'thin' }}>
-            <table className="w-full min-w-[800px] divide-y divide-gray-200">
-              <thead className="bg-gray-50 sticky top-0 z-10">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
-                    Usuario
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                    Rol
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
-                    Último acceso
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
-                    Creado
-                  </th>
-                  <th className="relative px-6 py-3 min-w-[80px]">
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.map((user, index) => (
-                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 min-w-[200px]">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 w-10 h-10">
-                          {user.avatar_url ? (
-                            <img
-                              className="w-10 h-10 rounded-full object-cover"
-                              src={user.avatar_url}
-                              alt={user.full_name}
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                target.nextElementSibling?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          <div className={`w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center ${user.avatar_url ? 'hidden' : ''}`}>
-                            <span className="text-sm font-medium text-blue-600">
-                              {user.full_name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="ml-4 min-w-0 flex-1">
-                          <div className="text-sm font-medium text-gray-900 truncate">{user.full_name}</div>
-                          <div className="text-sm text-gray-500 truncate">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
-                      {getRoleBadge(user.role)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
-                      {formatDate(user.last_sign_in_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
-                      {formatDate(user.created_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium min-w-[80px]">
-                      <div className="relative" ref={dropdownOpen === user.id ? dropdownRef : null}>
-                        <button
-                          onClick={() => setDropdownOpen(dropdownOpen === user.id ? null : user.id)}
-                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                        
-                        {dropdownOpen === user.id && (
-                          <div className={`absolute right-0 ${getDropdownPosition(index, filteredUsers.length)} w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50`}>
-                            <div className="py-1">
-                              <button
-                                onClick={() => handleEditUser(user)}
-                                className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                              >
-                                <Edit className="h-4 w-4 mr-2" />
-                                Editar
-                              </button>
-                              {currentUser?.id !== user.id && (
-                                <button
-                                  onClick={() => handleDeleteUser(user)}
-                                  className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Eliminar
-                                </button>
-                              )}
+          
+          <div className="space-y-4">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0 w-16 h-16">
+                {users[0].avatar_url ? (
+                  <img
+                    className="w-16 h-16 rounded-full object-cover"
+                    src={users[0].avatar_url}
+                    alt={users[0].full_name}
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+                    <span className="text-xl font-medium text-blue-600">
+                      {users[0].full_name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <h3 className="text-xl font-medium text-gray-900">{users[0].full_name}</h3>
+                <p className="text-gray-600">{users[0].email}</p>
+                <div className="mt-2">
+                  {getRoleBadge(users[0].role)}
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Último acceso
+                </label>
+                <p className="text-sm text-gray-900">{formatDate(users[0].last_sign_in_at)}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cuenta creada
+                </label>
+                <p className="text-sm text-gray-900">{formatDate(users[0].created_at)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Vista de tabla para admins */
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+          {filteredUsers.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">
+                {searchTerm || roleFilter !== 'all' 
+                  ? 'No se encontraron usuarios con los filtros aplicados' 
+                  : 'No hay usuarios registrados'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[70vh]" style={{ scrollbarWidth: 'thin' }}>
+              <table className="w-full min-w-[800px] divide-y divide-gray-200">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
+                      Usuario
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                      Rol
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
+                      Último acceso
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
+                      Creado
+                    </th>
+                    <th className="relative px-6 py-3 min-w-[80px]">
+                      <span className="sr-only">Acciones</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredUsers.map((user, index) => (
+                    <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 min-w-[200px]">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 w-10 h-10">
+                            {user.avatar_url ? (
+                              <img
+                                className="w-10 h-10 rounded-full object-cover"
+                                src={user.avatar_url}
+                                alt={user.full_name}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  target.nextElementSibling?.classList.remove('hidden');
+                                }}
+                              />
+                            ) : null}
+                            <div className={`w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center ${user.avatar_url ? 'hidden' : ''}`}>
+                              <span className="text-sm font-medium text-blue-600">
+                                {user.full_name.charAt(0).toUpperCase()}
+                              </span>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                          <div className="ml-4 min-w-0 flex-1">
+                            <div className="text-sm font-medium text-gray-900 truncate">{user.full_name}</div>
+                            <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
+                        {getRoleBadge(user.role)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
+                        {formatDate(user.last_sign_in_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
+                        {formatDate(user.created_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium min-w-[80px]">
+                        <div className="relative" ref={dropdownOpen === user.id ? dropdownRef : null}>
+                          <button
+                            onClick={() => setDropdownOpen(dropdownOpen === user.id ? null : user.id)}
+                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                          
+                          {dropdownOpen === user.id && (
+                            <div className={`absolute right-0 ${getDropdownPosition(index, filteredUsers.length)} w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50`}>
+                              <div className="py-1">
+                                <button
+                                  onClick={() => handleEditUser(user)}
+                                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Editar
+                                </button>
+                                {currentUser?.id !== user.id && (
+                                  <button
+                                    onClick={() => handleDeleteUser(user)}
+                                    className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Eliminar
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modals */}
-      <AddUserModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onUserAdded={fetchUsers}
-      />
+      {isCurrentUserAdmin && (
+        <AddUserModal
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onUserAdded={fetchUsers}
+        />
+      )}
 
       {selectedUser && (
         <>
@@ -394,17 +475,20 @@ const UserManagement: React.FC = () => {
             }}
             user={selectedUser}
             onUserUpdated={fetchUsers}
+            canEditRole={isCurrentUserAdmin} // Nueva prop para controlar si puede editar rol
           />
 
-          <DeleteUserModal
-            isOpen={showDeleteModal}
-            onClose={() => {
-              setShowDeleteModal(false);
-              setSelectedUser(null);
-            }}
-            user={selectedUser}
-            onUserDeleted={fetchUsers}
-          />
+          {isCurrentUserAdmin && (
+            <DeleteUserModal
+              isOpen={showDeleteModal}
+              onClose={() => {
+                setShowDeleteModal(false);
+                setSelectedUser(null);
+              }}
+              user={selectedUser}
+              onUserDeleted={fetchUsers}
+            />
+          )}
         </>
       )}
     </div>
