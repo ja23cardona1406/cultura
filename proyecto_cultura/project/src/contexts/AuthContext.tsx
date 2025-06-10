@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { User } from '../types';
+import { User as SupabaseUser, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { User } from '../types'; // Tu tipo personalizado
 
 type AuthContextType = {
   user: User | null;
+  session: Session | null;
   loading: boolean;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
@@ -13,73 +15,63 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Almacenamiento en localStorage para persistencia
-const LOCAL_STORAGE_USER_KEY = 'app_cached_user';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Referencias para evitar llamadas repetidas
-  const authCheckInProgress = useRef(false);
-  
   // Estados principales
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [initialized, setInitialized] = useState(false);
   
-  // Función para persistir datos de usuario en localStorage
-  const persistUserData = (userData: User | null) => {
-    if (userData) {
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userData));
-    } else {
-      localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+  // Referencias para evitar bucles infinitos y llamadas repetidas
+  const isInitialized = useRef(false);
+  const lastEventRef = useRef<{ event: string; timestamp: number } | null>(null);
+  const authCheckInProgress = useRef(false);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Función actualizar usuario (sin localStorage)
+  const updateUserState = (userData: User | null, sessionData: Session | null = null) => {
+    setUser(userData);
+    if (sessionData !== null) {
+      setSession(sessionData);
     }
   };
   
-  // Función actualizar usuario
-  const updateUserState = (userData: User | null) => {
-    setUser(userData);
-    persistUserData(userData);
-  };
-  
-  // Función para obtener datos de usuario desde Supabase
-  const fetchUserData = async (userId: string): Promise<any> => {
-    // Implementamos un timeout para evitar bloqueos indefinidos
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Timeout fetching user data')), 5000);
-    });
-    
-    const fetchPromise = new Promise(async (resolve) => {
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .single();
-          
-        if (error) {
-          console.error('Error al obtener datos del usuario:', error);
-          resolve(null);
-          return;
-        }
-        
-        resolve(data);
-      } catch (e) {
-        console.error('Error inesperado al obtener datos del usuario:', e);
-        resolve(null);
-      }
-    });
-    
+  // Función mejorada para obtener datos de usuario (con reintentos)
+  const fetchUserData = async (userId: string, retries = 3): Promise<any> => {
     try {
-      // Utilizamos Promise.race para implementar el timeout
-      return await Promise.race([fetchPromise, timeoutPromise]);
-    } catch (e) {
-      console.error('Tiempo de espera excedido al obtener datos del usuario:', e);
+      // Timeout más largo para evitar errores
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      clearTimeout(timeoutId);
+
+      if (error) {
+        console.warn('Error al obtener datos del usuario:', error);
+        return null;
+      }
+      return data;
+    } catch (error) {
+      console.warn(`Attempt ${4 - retries} failed:`, error);
+      
+      if (retries > 0) {
+        // Retry con delay exponencial
+        await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+        return fetchUserData(userId, retries - 1);
+      }
+      
+      console.error('Max retries reached for fetchUserData:', error);
       return null;
     }
   };
   
   // Función para construir objeto de usuario completo
-  const enhanceUserData = (userData: any, sessionUser: any = null) => {
+  const enhanceUserData = (userData: any, sessionUser: SupabaseUser | null = null) => {
     if (!userData) return null;
     
     return {
@@ -90,169 +82,216 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } as User;
   };
   
-  // Verificación de usuario principal
-  const checkUser = async () => {
+  // Verificación de usuario principal (mejorada)
+  const checkUser = async (currentSession?: Session | null) => {
     // Evitamos verificaciones simultáneas
     if (authCheckInProgress.current) return;
     authCheckInProgress.current = true;
     
     try {
-      setLoading(true);
-      
-      // Primero intentamos obtener la sesión
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      // Si hay error obteniendo la sesión, mantenemos el usuario actual
-      if (sessionError) {
-        console.error('Error al obtener sesión:', sessionError);
-        return;
-      }
+      // Usar sesión proporcionada o obtener la actual
+      const sessionToUse = currentSession !== undefined ? currentSession : session;
       
       // Si no hay sesión, limpiamos el usuario
-      if (!session) {
-        updateUserState(null);
+      if (!sessionToUse) {
+        updateUserState(null, null);
         return;
       }
       
-      // Obtenemos datos del usuario
-      const userData = await fetchUserData(session.user.id);
+      // Obtenemos datos del usuario con reintentos
+      const userData = await fetchUserData(sessionToUse.user.id);
       
       // Si no se pudieron obtener datos, usamos los de la sesión
       if (!userData) {
-        // Creamos un usuario mínimo con la información de la sesión
         const basicUser = {
-          id: session.user.id,
-          email: session.user.email,
+          id: sessionToUse.user.id,
+          email: sessionToUse.user.email,
           role: 'admin',
-          full_name: session.user.email?.split('@')[0] || 'Usuario',
+          full_name: sessionToUse.user.email?.split('@')[0] || 'Usuario',
           created_at: new Date().toISOString()
         } as User;
         
-        updateUserState(basicUser);
+        updateUserState(basicUser, sessionToUse);
         return;
       }
       
       // Si todo va bien, actualizamos con datos completos
-      const enhancedUser = enhanceUserData(userData, session.user);
-      updateUserState(enhancedUser);
+      const enhancedUser = enhanceUserData(userData, sessionToUse.user);
+      updateUserState(enhancedUser, sessionToUse);
       
     } catch (error) {
       console.error('Error en verificación de usuario:', error);
-      // En caso de error, intentamos recuperar datos del localStorage
-      try {
-        const cachedUserString = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-        if (cachedUserString) {
-          const cachedUser = JSON.parse(cachedUserString);
-          setUser(cachedUser); // No persistimos para evitar ciclos
-        }
-      } catch (e) {
-        console.error('Error recuperando datos de caché:', e);
-      }
+      setError('Error al verificar usuario');
     } finally {
-      setLoading(false);
       authCheckInProgress.current = false;
     }
   };
   
-  // Función para mantener la sesión activa
-  const keepSessionAlive = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Refrescamos la sesión para mantenerla activa
-        await supabase.auth.refreshSession();
-      }
-    } catch (error) {
-      console.error('Error refrescando sesión:', error);
+  // Función mejorada para manejar cambios de autenticación
+  const handleAuthChange = async (event: AuthChangeEvent, newSession: Session | null) => {
+    const now = Date.now();
+    
+    // Evitar procesar eventos duplicados muy seguidos (CLAVE PARA EL BUCLE)
+    if (lastEventRef.current && 
+        lastEventRef.current.event === event && 
+        now - lastEventRef.current.timestamp < 1000) {
+      return;
+    }
+    
+    lastEventRef.current = { event, timestamp: now };
+
+    // Solo log de eventos importantes (no TOKEN_REFRESHED)
+    if (event !== 'TOKEN_REFRESHED') {
+      console.log('Evento de autenticación:', event);
+    }
+
+    switch (event) {
+      case 'INITIAL_SESSION':
+      case 'SIGNED_IN':
+        if (newSession?.user) {
+          setSession(newSession);
+          setUser(newSession.user as any); // Usuario temporal
+          
+          // Fetch user data con debounce para evitar llamadas múltiples
+          if (fetchTimeoutRef.current) {
+            clearTimeout(fetchTimeoutRef.current);
+          }
+          
+          fetchTimeoutRef.current = setTimeout(async () => {
+            try {
+              await checkUser(newSession);
+            } catch (error) {
+              console.warn('Error in delayed checkUser:', error);
+            } finally {
+              if (!isInitialized.current) {
+                setLoading(false);
+                isInitialized.current = true;
+              }
+            }
+          }, 500);
+        } else {
+          setSession(null);
+          setUser(null);
+          if (!isInitialized.current) {
+            setLoading(false);
+            isInitialized.current = true;
+          }
+        }
+        break;
+
+      case 'SIGNED_OUT':
+        setSession(null);
+        setUser(null);
+        setError(null);
+        setLoading(false);
+        isInitialized.current = true;
+        break;
+
+      case 'TOKEN_REFRESHED':
+        // Solo actualizar session, no hacer fetch completo
+        if (newSession) {
+          setSession(newSession);
+        }
+        break;
+
+      case 'USER_UPDATED':
+        if (newSession) {
+          // Solo actualizar si hay cambios significativos
+          if (!user || user.id !== newSession.user.id) {
+            await checkUser(newSession);
+          }
+        }
+        break;
+
+      default:
+        if (!isInitialized.current) {
+          setLoading(false);
+          isInitialized.current = true;
+        }
+        break;
     }
   };
   
   // Inicialización - solo se ejecuta una vez
   useEffect(() => {
-    const initializeAuth = async () => {
-      // Intentamos recuperar datos en caché primero para mejorar UX
+    let mounted = true;
+
+    const getInitialSession = async () => {
       try {
-        const cachedUserString = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-        if (cachedUserString) {
-          const cachedUser = JSON.parse(cachedUserString);
-          setUser(cachedUser);
+        // Obtenemos la sesión inicial
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+
+        if (error) {
+          console.error('Error getting initial session:', error);
+          setError(error.message);
+        } else {
+          if (initialSession) {
+            setSession(initialSession);
+            setUser(initialSession.user as any); // Usuario temporal
+            await checkUser(initialSession);
+          } else {
+            setUser(null);
+            setSession(null);
+          }
         }
-      } catch (e) {
-        console.error('Error al cargar datos de caché:', e);
+      } catch (error) {
+        console.error('Error in getInitialSession:', error);
+        if (mounted) {
+          setError('Error al inicializar autenticación');
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          isInitialized.current = true;
+        }
       }
-      
-      // Luego verificamos el estado real
-      await checkUser();
-      
-      setInitialized(true);
     };
     
-    initializeAuth();
-    
-    // Configuramos intervalo para mantener sesión activa
-    const keepAliveInterval = setInterval(keepSessionAlive, 10 * 60 * 1000); // 10 minutos
-    
+    getInitialSession();
+
     return () => {
-      clearInterval(keepAliveInterval);
+      mounted = false;
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
     };
   }, []);
   
   // Configuración de listeners después de inicialización
   useEffect(() => {
-    if (!initialized) return;
+    if (!isInitialized.current) return;
     
-    // Listener para cambios de autenticación
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Evento de autenticación:', event);
-        
-        if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event) && session) {
-          // Si tenemos usuario en estado pero ID diferente, actualizamos
-          if (user && user.id !== session.user.id) {
-            await checkUser();
-          } 
-          // Si no tenemos usuario pero hay sesión, verificamos
-          else if (!user) {
-            await checkUser();
-          }
-        } 
-        else if (event === 'SIGNED_OUT') {
-          updateUserState(null);
-        }
-        
-        setLoading(false);
-      }
-    );
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthChange);
     
-    // Listener para cambios de visibilidad de página
+    // Listener para cambios de visibilidad de página (simplificado)
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Al volver a la pestaña, verificamos sesión sin bloquear UI
+      if (document.visibilityState === 'visible' && session) {
+        // Solo verificar sesión, no usuario completo
         setTimeout(async () => {
-          await keepSessionAlive();
-          
-          // Solo verificamos usuario completo si hay discrepancia
-          const { data } = await supabase.auth.getSession();
-          const hasSession = !!data.session;
-          const hasUser = !!user;
-          
-          if (hasSession !== hasUser) {
-            await checkUser();
+          try {
+            const { data } = await supabase.auth.getSession();
+            if (data.session && !user) {
+              await checkUser(data.session);
+            }
+          } catch (error) {
+            console.warn('Error en visibility check:', error);
           }
-        }, 0);
+        }, 1000);
       }
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
-    // Limpieza
     return () => {
-      if (authListener?.subscription) {
-        authListener.subscription.unsubscribe();
-      }
+      subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
     };
-  }, [initialized, user]);
+  }, [isInitialized.current]); // Dependencia mínima
   
   // Funciones de autenticación
   async function signIn(email: string, password: string) {
@@ -270,9 +309,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      // Verificamos usuario inmediatamente para mejor UX
-      if (data.user) {
-        await checkUser();
+      // La verificación de usuario se hará automáticamente en el listener
+      if (data.session) {
+        setSession(data.session);
       }
     } catch (error) {
       setError('Error inesperado durante el inicio de sesión');
@@ -285,23 +324,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     try {
       setLoading(true);
-      await supabase.auth.signOut();
-      updateUserState(null);
+      setError(null);
+      
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Error signing out:', error);
+        setError(error.message);
+        throw error;
+      }
+      
+      // La limpieza se hará automáticamente en el listener
     } catch (error) {
-      console.error('Error al cerrar sesión:', error);
+      console.error('Error in signOut:', error);
+      throw error;
     } finally {
       setLoading(false);
     }
   }
   
   async function refreshUser() {
-    if (!user) return;
+    if (!session) return;
     
     try {
       setLoading(true);
-      await checkUser();
+      await checkUser(session);
     } catch (error) {
       console.error('Error al actualizar usuario:', error);
+      setError('Error al actualizar usuario');
     } finally {
       setLoading(false);
     }
@@ -309,6 +359,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   const value = {
     user,
+    session,
     loading,
     error,
     signIn,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Upload, X, Eye, EyeOff, Key, Mail } from 'lucide-react';
 import Modal from './Modal';
 import { User, UserRole } from '../../types';
@@ -22,6 +22,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
   
   const [formData, setFormData] = useState({
     full_name: user.full_name,
@@ -33,6 +34,43 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
     newPassword: '',
     confirmPassword: ''
   });
+
+  // Obtener el email del usuario si no está disponible
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      if (user.email) {
+        setUserEmail(user.email);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('email')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching user email:', error);
+          toast.error('Error al obtener el email del usuario');
+          return;
+        }
+
+        if (data?.email) {
+          setUserEmail(data.email);
+        } else {
+          console.error('Usuario sin email encontrado');
+          toast.error('Este usuario no tiene email asociado');
+        }
+      } catch (error) {
+        console.error('Error in fetchUserEmail:', error);
+      }
+    };
+
+    if (isOpen) {
+      fetchUserEmail();
+    }
+  }, [isOpen, user.id, user.email, supabase]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -72,12 +110,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
 
   const handlePasswordChange = async () => {
     if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
-      toast.error('Todos los campos de contraseña son requeridos');
+      toast.error('Todos los campos de contraseña son obligatorios');
       return false;
     }
 
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error('Las contraseñas nuevas no coinciden');
+      toast.error('Las contraseñas no coinciden');
       return false;
     }
 
@@ -87,32 +125,79 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
     }
 
     try {
-      // Llamar a la edge function para cambiar contraseña
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/change-user-password`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-          current_password: passwordData.currentPassword,
-          new_password: passwordData.newPassword,
-          user_email: user.email
-        })
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Error al cambiar contraseña');
+      // Validar que tengamos el email del usuario
+      if (!userEmail) {
+        throw new Error('No se encontró el email del usuario');
       }
 
-      toast.success('Contraseña actualizada correctamente');
+      // Obtener el token de la sesión actual
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No hay sesión activa');
+      }
+
+      console.log('Calling edge function with:', {
+        userId: user.id,
+        userEmail: userEmail,
+        hasCurrentPassword: !!passwordData.currentPassword,
+        hasNewPassword: !!passwordData.newPassword
+      });
+
+      // Llamar a la función edge con headers CORS apropiados
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/change-user-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            newPassword: passwordData.newPassword,
+            currentPassword: passwordData.currentPassword,
+            userEmail: userEmail
+          })
+        }
+      );
+
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Password changed successfully:', result);
+      toast.success('Contraseña cambiada exitosamente');
+
+      // Limpiar formulario
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+
       return true;
+
     } catch (error) {
       console.error('Error changing password:', error);
-      toast.error('Error al cambiar contraseña: ' + (error instanceof Error ? error.message : String(error)));
+      
+      const errorMessage = error instanceof Error ? error.message : 'Error al cambiar la contraseña';
+      toast.error(errorMessage);
+      
       return false;
     }
   };
@@ -121,7 +206,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
     try {
       setIsSendingResetEmail(true);
       
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email || '', {
+      if (!userEmail) {
+        toast.error('No se puede enviar email: usuario sin email');
+        return;
+      }
+      
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
         redirectTo: `${window.location.origin}/reset-password`
       });
 
@@ -163,30 +253,23 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
         avatarUrl = await uploadAvatar(imageFile);
       }
 
-      // Actualizar en tabla users
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          full_name: formData.full_name,
-          role: formData.role,
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+      // Usar la función segura de actualización
+      const { data, error } = await supabase
+        .rpc('update_user_safe', {
+          user_id: user.id,
+          new_full_name: formData.full_name,
+          new_role: formData.role,
+          new_avatar_url: avatarUrl
+        });
 
-      if (updateError) throw updateError;
+      if (error) {
+        console.error('Error updating user:', error);
+        throw error;
+      }
 
-      // Actualizar en tabla profiles
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          role: formData.role,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (profileError) {
-        console.warn('Error updating profile:', profileError);
+      // Verificar si la función retornó un error
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       const successMessage = passwordChanged 
@@ -211,6 +294,9 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
       setIsSubmitting(false);
     }
   };
+
+  // Mostrar un mensaje si no hay email disponible
+  const canChangePassword = userEmail.length > 0;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Editar Usuario">
@@ -304,13 +390,22 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
               <button
                 type="button"
                 onClick={() => setShowPasswordSection(!showPasswordSection)}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+                disabled={!canChangePassword}
               >
                 {showPasswordSection ? 'Cancelar' : 'Cambiar'}
               </button>
             </div>
 
-            {showPasswordSection && (
+            {!canChangePassword && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
+                <p className="text-sm text-yellow-800">
+                  No se puede cambiar la contraseña: este usuario no tiene email asociado.
+                </p>
+              </div>
+            )}
+
+            {showPasswordSection && canChangePassword && (
               <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
                 <div>
                   <label htmlFor="current_password" className="block text-sm font-medium text-gray-700">
@@ -400,7 +495,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
                   <button
                     type="button"
                     onClick={handleSendPasswordResetEmail}
-                    disabled={isSendingResetEmail || !user.email}
+                    disabled={isSendingResetEmail || !userEmail}
                     className="flex items-center gap-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50"
                   >
                     <Mail className="h-4 w-4" />

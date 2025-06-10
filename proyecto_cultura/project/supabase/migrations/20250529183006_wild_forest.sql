@@ -1,7 +1,11 @@
 -- This SQL script should be run in the Supabase SQL Editor to set up the necessary tables and triggers
 
--- Create a custom enum type for user roles
-CREATE TYPE user_role AS ENUM ('admin', 'dian', 'institucion', 'user');
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('admin', 'dian', 'institucion', 'user');
+    END IF;
+END $$;
 
 -- Create users table
 CREATE TABLE IF NOT EXISTS public.users (

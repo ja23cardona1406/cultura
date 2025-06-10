@@ -31,12 +31,13 @@ export type Municipality =
 // Definiciones de tipos de entidades
 export type User = {
   id: string;
-  email?: string;
+  email: string; // Cambiado a requerido para evitar errores
   full_name: string;
   role: UserRole;
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
+  last_sign_in_at?: string | null; // Agregado para compatibilidad
 };
 
 export type Profile = {
