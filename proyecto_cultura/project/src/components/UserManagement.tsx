@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
   Search, 
@@ -32,6 +32,7 @@ const UserManagement: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchUsers = async () => {
     try {
@@ -90,6 +91,22 @@ const UserManagement: React.FC = () => {
     fetchUsers();
   }, []);
 
+  // Cerrar dropdown cuando se hace click fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(null);
+      }
+    };
+
+    if (dropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [dropdownOpen]);
+
   const handleRefresh = () => {
     fetchUsers();
   };
@@ -145,6 +162,12 @@ const UserManagement: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Función para determinar la posición del dropdown
+  const getDropdownPosition = (index: number, totalUsers: number) => {
+    const isLastRows = index >= totalUsers - 2; // Últimas 2 filas
+    return isLastRows ? 'bottom-full mb-2' : 'top-full mt-2';
   };
 
   if (loading) {
@@ -241,7 +264,7 @@ const UserManagement: React.FC = () => {
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
         {filteredUsers.length === 0 ? (
           <div className="text-center py-12">
             <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -252,31 +275,32 @@ const UserManagement: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          // Contenedor con scroll horizontal Y vertical
+          <div className="overflow-auto max-h-[70vh]" style={{ scrollbarWidth: 'thin' }}>
+            <table className="w-full min-w-[800px] divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
                     Usuario
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                     Rol
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                     Último acceso
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
                     Creado
                   </th>
-                  <th className="relative px-6 py-3">
+                  <th className="relative px-6 py-3 min-w-[80px]">
                     <span className="sr-only">Acciones</span>
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                {filteredUsers.map((user, index) => (
+                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 min-w-[200px]">
                       <div className="flex items-center">
                         <div className="flex-shrink-0 w-10 h-10">
                           {user.avatar_url ? (
@@ -297,23 +321,23 @@ const UserManagement: React.FC = () => {
                             </span>
                           </div>
                         </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
+                        <div className="ml-4 min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-900 truncate">{user.full_name}</div>
+                          <div className="text-sm text-gray-500 truncate">{user.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
                       {getRoleBadge(user.role)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
                       {formatDate(user.last_sign_in_at)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 min-w-[150px]">
                       {formatDate(user.created_at)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="relative">
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium min-w-[80px]">
+                      <div className="relative" ref={dropdownOpen === user.id ? dropdownRef : null}>
                         <button
                           onClick={() => setDropdownOpen(dropdownOpen === user.id ? null : user.id)}
                           className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
@@ -322,11 +346,11 @@ const UserManagement: React.FC = () => {
                         </button>
                         
                         {dropdownOpen === user.id && (
-                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+                          <div className={`absolute right-0 ${getDropdownPosition(index, filteredUsers.length)} w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50`}>
                             <div className="py-1">
                               <button
                                 onClick={() => handleEditUser(user)}
-                                className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
                               >
                                 <Edit className="h-4 w-4 mr-2" />
                                 Editar
@@ -334,7 +358,7 @@ const UserManagement: React.FC = () => {
                               {currentUser?.id !== user.id && (
                                 <button
                                   onClick={() => handleDeleteUser(user)}
-                                  className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                  className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Eliminar
@@ -382,14 +406,6 @@ const UserManagement: React.FC = () => {
             onUserDeleted={fetchUsers}
           />
         </>
-      )}
-
-      {/* Click outside to close dropdown */}
-      {dropdownOpen && (
-        <div
-          className="fixed inset-0 z-0"
-          onClick={() => setDropdownOpen(null)}
-        />
       )}
     </div>
   );
