@@ -37,9 +37,9 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     }
   };
 
-  const uploadAvatar = async (file: File): Promise<string | null> => {
+  const uploadAvatar = async (userId: string, file: File): Promise<string | null> => {
     try {
-      const fileExt = file.name.split('.').pop();
+      const fileExt = file.name.split('.').pop() || 'jpg';
       const fileName = `avatar_${Date.now()}.${fileExt}`;
       const filePath = `profile/${formData.full_name}/${fileName}`;
 
@@ -47,7 +47,10 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
         .from('imagenes')
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
 
       const { data } = supabase.storage
         .from('imagenes')
@@ -61,9 +64,22 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     }
   };
 
+  const resetForm = () => {
+    setFormData({
+      email: '',
+      password: '',
+      full_name: '',
+      role: 'user'
+    });
+    setImageFile(null);
+    setImagePreview(null);
+    setShowPassword(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validaciones básicas
     if (!formData.email || !formData.password || !formData.full_name) {
       toast.error('Todos los campos son requeridos');
       return;
@@ -74,73 +90,144 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
       return;
     }
 
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast.error('Por favor ingresa un email válido');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
 
-      // Crear usuario en auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      // Obtener sesión actual
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
+      }
+
+      console.log('Enviando datos a Edge Function:', {
         email: formData.email,
-        password: formData.password,
-        email_confirm: true
+        full_name: formData.full_name,
+        role: formData.role
+        // No mostramos la contraseña en logs por seguridad
       });
 
-      if (authError) throw authError;
+      // Llamar a la Edge Function para crear el usuario
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-admin`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+            full_name: formData.full_name,
+            role: formData.role
+          })
+        }
+      );
+
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        throw new Error(errorData.error || `Error HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('Edge Function response:', result);
+      
+      if (!result.success || !result.user_id) {
+        throw new Error(result.error || 'Error al crear usuario - ID no recibido');
+      }
+
+      const userId = result.user_id;
+      console.log('Usuario creado en Auth con ID:', userId);
 
       let avatarUrl = null;
 
       // Subir imagen si se seleccionó
       if (imageFile) {
-        avatarUrl = await uploadAvatar(imageFile);
+        console.log('Subiendo avatar...');
+        avatarUrl = await uploadAvatar(userId, imageFile);
+        if (avatarUrl) {
+          console.log('Avatar subido correctamente:', avatarUrl);
+        }
       }
 
-      // Crear usuario en tabla users
+      // Crear registro en la tabla users
+      console.log('Creando registro en tabla users...');
       const { error: userError } = await supabase
         .from('users')
         .insert({
-          id: authData.user.id,
+          id: userId,
           email: formData.email,
           full_name: formData.full_name,
           role: formData.role,
           avatar_url: avatarUrl
         });
 
-      if (userError) throw userError;
+      if (userError) {
+        console.error('Error creating user record:', userError);
+        throw new Error('Error al crear registro de usuario: ' + userError.message);
+      }
+
+      console.log('Registro en tabla users creado correctamente');
 
       // Crear perfil
+      console.log('Creando perfil...');
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
-          id: authData.user.id,
+          id: userId,
           role: formData.role
         });
 
       if (profileError) {
         console.warn('Error creating profile:', profileError);
+        // No lanzar error aquí, el perfil puede ser opcional o tener triggers
+      } else {
+        console.log('Perfil creado correctamente');
       }
 
       toast.success('Usuario creado correctamente');
+      resetForm();
       onClose();
       onUserAdded();
       
-      // Reset form
-      setFormData({
-        email: '',
-        password: '',
-        full_name: '',
-        role: 'user'
-      });
-      setImageFile(null);
-      setImagePreview(null);
     } catch (err) {
       console.error('Error creating user:', err);
-      toast.error('Error al crear usuario: ' + (err instanceof Error ? err.message : String(err)));
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      toast.error('Error al crear usuario: ' + errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleClose = () => {
+    if (!isSubmitting) {
+      resetForm();
+      onClose();
+    }
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Agregar Usuario">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Agregar Usuario">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Avatar upload */}
         <div>
@@ -168,6 +255,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
                     setImagePreview(null);
                   }}
                   className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                  disabled={isSubmitting}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -194,16 +282,17 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
             type="email"
             id="email"
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value.trim() })}
             required
             className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
             disabled={isSubmitting}
+            placeholder="usuario@ejemplo.com"
           />
         </div>
 
         <div>
           <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Contraseña *
+            Contraseña * (mínimo 6 caracteres)
           </label>
           <div className="mt-1 relative">
             <input
@@ -212,13 +301,16 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               required
+              minLength={6}
               className="block w-full px-3 py-2 pr-10 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
               disabled={isSubmitting}
+              placeholder="Mínimo 6 caracteres"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              disabled={isSubmitting}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4 text-gray-400" />
@@ -237,16 +329,17 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
             type="text"
             id="full_name"
             value={formData.full_name}
-            onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+            onChange={(e) => setFormData({ ...formData, full_name: e.target.value.trim() })}
             required
             className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
             disabled={isSubmitting}
+            placeholder="Nombre y apellidos"
           />
         </div>
         
         <div>
           <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-            Rol
+            Rol *
           </label>
           <select
             id="role"
@@ -266,7 +359,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
         <div className="flex justify-end gap-3 mt-6">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
             disabled={isSubmitting}
           >
@@ -274,7 +367,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
           </button>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex items-center"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isSubmitting}
           >
             {isSubmitting ? (

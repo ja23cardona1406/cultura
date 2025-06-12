@@ -20,40 +20,53 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, user
     try {
       setIsDeleting(true);
 
-      // Eliminar de la tabla users
-      const { error: deleteUserError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', user.id);
-
-      if (deleteUserError) throw deleteUserError;
-
-      // Eliminar de profiles
-      const { error: deleteProfileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', user.id);
-
-      if (deleteProfileError) {
-        console.warn('Error deleting profile:', deleteProfileError);
+      // Usar Edge Function para eliminar usuario de forma segura
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No hay sesión activa');
       }
 
-      // Eliminar avatar si existe
-      if (user.avatar_url) {
-        const avatarPath = user.avatar_url.split('/').pop();
-        if (avatarPath) {
-          await supabase.storage
-            .from('imagenes')
-            .remove([`profile/${user.full_name}/${avatarPath}`]);
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user-admin`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            userId: user.id
+          })
         }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error al eliminar usuario');
       }
 
       toast.success('Usuario eliminado correctamente');
       onClose();
       onUserDeleted();
+      
     } catch (err) {
       console.error('Error deleting user:', err);
-      toast.error('Error al eliminar usuario: ' + (err instanceof Error ? err.message : String(err)));
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      toast.error('Error al eliminar usuario: ' + errorMessage);
     } finally {
       setIsDeleting(false);
     }
