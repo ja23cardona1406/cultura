@@ -76,148 +76,143 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     setShowPassword(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  // Validaciones básicas
+  if (!formData.email || !formData.password || !formData.full_name) {
+    toast.error('Todos los campos son requeridos');
+    return;
+  }
+
+  if (formData.password.length < 6) {
+    toast.error('La contraseña debe tener al menos 6 caracteres');
+    return;
+  }
+
+  // Validar formato de email
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(formData.email)) {
+    toast.error('Por favor ingresa un email válido');
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+
+    // Obtener sesión actual
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    // Validaciones básicas
-    if (!formData.email || !formData.password || !formData.full_name) {
-      toast.error('Todos los campos son requeridos');
-      return;
+    if (sessionError || !session) {
+      throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
     }
 
-    if (formData.password.length < 6) {
-      toast.error('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
+    console.log('Enviando datos a Edge Function:', {
+      email: formData.email,
+      full_name: formData.full_name,
+      role: formData.role
+    });
 
-    // Validar formato de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      toast.error('Por favor ingresa un email válido');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-
-      // Obtener sesión actual
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
+    // Llamar a la Edge Function para crear el usuario
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-admin`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.full_name,
+          role: formData.role
+        })
       }
+    );
 
-      console.log('Enviando datos a Edge Function:', {
-        email: formData.email,
-        full_name: formData.full_name,
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error response:', errorText);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+      
+      throw new Error(errorData.error || `Error HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('Edge Function response:', result);
+    
+    if (!result.success || !result.user_id) {
+      throw new Error(result.error || 'Error al crear usuario - ID no recibido');
+    }
+
+    const userId = result.user_id;
+    console.log('Usuario creado en Auth con ID:', userId);
+
+    let avatarUrl = null;
+
+    // Subir imagen si se seleccionó
+    if (imageFile) {
+      console.log('Subiendo avatar...');
+      avatarUrl = await uploadAvatar(userId, imageFile);
+      if (avatarUrl) {
+        console.log('Avatar subido correctamente:', avatarUrl);
+        
+        // Actualizar el avatar_url en la tabla users (que ya fue creada por el trigger)
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ avatar_url: avatarUrl })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Error updating avatar:', updateError);
+          // No lanzar error, el usuario se creó correctamente
+          toast.error('Usuario creado pero error al actualizar avatar');
+        }
+      }
+    }
+
+    // *** YA NO NECESITAMOS CREAR EL REGISTRO EN users MANUALMENTE ***
+    // *** EL TRIGGER SE ENCARGA DE ESO AUTOMÁTICAMENTE ***
+
+    // El perfil puede ser creado opcionalmente si tu aplicación lo requiere
+    console.log('Creando perfil...');
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
         role: formData.role
-        // No mostramos la contraseña en logs por seguridad
       });
 
-      // Llamar a la Edge Function para crear el usuario
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-admin`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-            full_name: formData.full_name,
-            role: formData.role
-          })
-        }
-      );
-
-      console.log('Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText };
-        }
-        
-        throw new Error(errorData.error || `Error HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('Edge Function response:', result);
-      
-      if (!result.success || !result.user_id) {
-        throw new Error(result.error || 'Error al crear usuario - ID no recibido');
-      }
-
-      const userId = result.user_id;
-      console.log('Usuario creado en Auth con ID:', userId);
-
-      let avatarUrl = null;
-
-      // Subir imagen si se seleccionó
-      if (imageFile) {
-        console.log('Subiendo avatar...');
-        avatarUrl = await uploadAvatar(userId, imageFile);
-        if (avatarUrl) {
-          console.log('Avatar subido correctamente:', avatarUrl);
-        }
-      }
-
-      // Crear registro en la tabla users
-      console.log('Creando registro en tabla users...');
-      const { error: userError } = await supabase
-        .from('users')
-        .insert({
-          id: userId,
-          email: formData.email,
-          full_name: formData.full_name,
-          role: formData.role,
-          avatar_url: avatarUrl
-        });
-
-      if (userError) {
-        console.error('Error creating user record:', userError);
-        throw new Error('Error al crear registro de usuario: ' + userError.message);
-      }
-
-      console.log('Registro en tabla users creado correctamente');
-
-      // Crear perfil
-      console.log('Creando perfil...');
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          role: formData.role
-        });
-
-      if (profileError) {
-        console.warn('Error creating profile:', profileError);
-        // No lanzar error aquí, el perfil puede ser opcional o tener triggers
-      } else {
-        console.log('Perfil creado correctamente');
-      }
-
-      toast.success('Usuario creado correctamente');
-      resetForm();
-      onClose();
-      onUserAdded();
-      
-    } catch (err) {
-      console.error('Error creating user:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-      toast.error('Error al crear usuario: ' + errorMessage);
-    } finally {
-      setIsSubmitting(false);
+    if (profileError) {
+      console.warn('Error creating profile:', profileError);
+      // No lanzar error aquí, el perfil puede ser opcional
+    } else {
+      console.log('Perfil creado correctamente');
     }
-  };
+
+    toast.success('Usuario creado correctamente');
+    resetForm();
+    onClose();
+    onUserAdded();
+    
+  } catch (err) {
+    console.error('Error creating user:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+    toast.error('Error al crear usuario: ' + errorMessage);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleClose = () => {
     if (!isSubmitting) {
