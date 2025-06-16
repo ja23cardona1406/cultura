@@ -253,27 +253,36 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
 
       // Solo incluir el rol si el usuario tiene permisos para editarlo
       if (canEditRole) {
-        updateData.role = formData.role;
+        updateData.role = formData.role as UserRole; // Cast explícito al tipo UserRole
       }
 
-      // Intentar usar la función segura primero, sino usar update directo
       let error;
-      if (canEditRole) {
-        const { data, error: rpcError } = await supabase
-          .rpc('update_user_safe', {
-            user_id: user.id,
-            new_full_name: formData.full_name,
-            new_role: formData.role,
-            new_avatar_url: avatarUrl
-          });
 
-        if (rpcError || data?.error) {
-          error = rpcError || new Error(data.error);
-        }
-      } else {
+      // CORRECCIÓN: Usar update directo en lugar de la función RPC problemática
+      if (canEditRole) {
+        // Para editar rol, usar update directo con cast explícito
         const { error: updateError } = await supabase
           .from('users')
-          .update(updateData)
+          .update({
+            full_name: formData.full_name.trim(),
+            email: formData.email.trim(),
+            role: formData.role, // Supabase manejará el cast automáticamente
+            avatar_url: avatarUrl || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+        
+        error = updateError;
+      } else {
+        // Para usuarios sin permisos de rol, excluir el campo role
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            full_name: formData.full_name.trim(),
+            email: formData.email.trim(),
+            avatar_url: avatarUrl || null,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', user.id);
         
         error = updateError;
