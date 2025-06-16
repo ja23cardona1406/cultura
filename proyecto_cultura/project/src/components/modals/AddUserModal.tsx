@@ -13,7 +13,8 @@ interface AddUserModalProps {
 
 const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdded }) => {
   const { supabase } = useSupabase();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -59,7 +60,6 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
       return data.publicUrl;
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      toast.error('Error al subir la imagen');
       return null;
     }
   };
@@ -74,148 +74,137 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     setImageFile(null);
     setImagePreview(null);
     setShowPassword(false);
+    setError('');
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  // Validaciones básicas
-  if (!formData.email || !formData.password || !formData.full_name) {
-    toast.error('Todos los campos son requeridos');
-    return;
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
-  if (formData.password.length < 6) {
-    toast.error('La contraseña debe tener al menos 6 caracteres');
-    return;
-  }
-
-  // Validar formato de email
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(formData.email)) {
-    toast.error('Por favor ingresa un email válido');
-    return;
-  }
-
-  try {
-    setIsSubmitting(true);
-
-    // Obtener sesión actual
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError || !session) {
-      throw new Error('No hay sesión activa. Por favor inicia sesión nuevamente.');
-    }
-
-    console.log('Enviando datos a Edge Function:', {
-      email: formData.email,
-      full_name: formData.full_name,
-      role: formData.role
-    });
-
-    // Llamar a la Edge Function para crear el usuario
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-admin`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          full_name: formData.full_name,
-          role: formData.role
-        })
+    try {
+      // Validaciones del frontend
+      if (!formData.email || !formData.password || !formData.full_name) {
+        setError('Todos los campos son requeridos');
+        setLoading(false);
+        return;
       }
-    );
 
-    console.log('Response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error response:', errorText);
-      
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { error: errorText };
+      if (formData.password.length < 6) {
+        setError('La contraseña debe tener al menos 6 caracteres');
+        setLoading(false);
+        return;
       }
-      
-      throw new Error(errorData.error || `Error HTTP ${response.status}: ${response.statusText}`);
-    }
 
-    const result = await response.json();
-    console.log('Edge Function response:', result);
-    
-    if (!result.success || !result.user_id) {
-      throw new Error(result.error || 'Error al crear usuario - ID no recibido');
-    }
-
-    const userId = result.user_id;
-    console.log('Usuario creado en Auth con ID:', userId);
-
-    let avatarUrl = null;
-
-    // Subir imagen si se seleccionó
-    if (imageFile) {
-      console.log('Subiendo avatar...');
-      avatarUrl = await uploadAvatar(userId, imageFile);
-      if (avatarUrl) {
-        console.log('Avatar subido correctamente:', avatarUrl);
-        
-        // Actualizar el avatar_url en la tabla users (que ya fue creada por el trigger)
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ avatar_url: avatarUrl })
-          .eq('id', userId);
-
-        if (updateError) {
-          console.error('Error updating avatar:', updateError);
-          // No lanzar error, el usuario se creó correctamente
-          toast.error('Usuario creado pero error al actualizar avatar');
-        }
+      // Validar formato de email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email)) {
+        setError('Por favor ingresa un email válido');
+        setLoading(false);
+        return;
       }
-    }
 
-    // *** YA NO NECESITAMOS CREAR EL REGISTRO EN users MANUALMENTE ***
-    // *** EL TRIGGER SE ENCARGA DE ESO AUTOMÁTICAMENTE ***
-
-    // El perfil puede ser creado opcionalmente si tu aplicación lo requiere
-    console.log('Creando perfil...');
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
+      console.log('Enviando datos a Edge Function:', {
+        email: formData.email,
+        full_name: formData.full_name,
         role: formData.role
       });
 
-    if (profileError) {
-      console.warn('Error creating profile:', profileError);
-      // No lanzar error aquí, el perfil puede ser opcional
-    } else {
-      console.log('Perfil creado correctamente');
-    }
+      // Obtener el token del usuario actual
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setError('No hay sesión activa. Por favor inicia sesión nuevamente.');
+        setLoading(false);
+        return;
+      }
 
-    toast.success('Usuario creado correctamente');
-    resetForm();
-    onClose();
-    onUserAdded();
-    
-  } catch (err) {
-    console.error('Error creating user:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-    toast.error('Error al crear usuario: ' + errorMessage);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+      // Llamar a la Edge Function
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-admin`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify(formData)
+        }
+      );
+
+      console.log('Response status:', response.status);
+      
+      const result = await response.json();
+      console.log('Edge Function response:', result);
+
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      if (!result.success || !result.user_id) {
+        throw new Error(result.error || 'Error al crear usuario - ID no recibido');
+      }
+
+      const userId = result.user_id;
+      console.log('Usuario creado en Auth con ID:', userId);
+
+      // Crear usuario en la tabla users
+      console.log('Creando usuario en tabla users...');
+      
+      let avatarUrl = null;
+      
+      // Subir imagen si se seleccionó
+      if (imageFile) {
+        console.log('Subiendo avatar...');
+        avatarUrl = await uploadAvatar(userId, imageFile);
+        if (avatarUrl) {
+          console.log('Avatar subido correctamente:', avatarUrl);
+        }
+      }
+
+      // Insertar en la tabla users
+      const { error: userError } = await supabase
+        .from('users')
+        .insert({
+          auth_id: userId,
+          email: formData.email,
+          full_name: formData.full_name,
+          role: formData.role,
+          avatar_url: avatarUrl,
+          created_at: new Date().toISOString()
+        });
+
+      if (userError) {
+        console.error('Error creating user record:', userError);
+        throw new Error('Error al crear el registro del usuario: ' + userError.message);
+      }
+
+      console.log('Usuario creado correctamente en tabla users');
+
+      toast.success('Usuario creado correctamente');
+      resetForm();
+      onClose();
+      onUserAdded();
+      
+    } catch (err) {
+      console.error('Error creating user:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      setError('Error al crear usuario: ' + errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value.trim()
+    }));
+  };
 
   const handleClose = () => {
-    if (!isSubmitting) {
+    if (!loading) {
       resetForm();
       onClose();
     }
@@ -224,6 +213,13 @@ const handleSubmit = async (e: React.FormEvent) => {
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Agregar Usuario">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Error display */}
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
+
         {/* Avatar upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -250,7 +246,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                     setImagePreview(null);
                   }}
                   className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                  disabled={isSubmitting}
+                  disabled={loading}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -263,49 +259,49 @@ const handleSubmit = async (e: React.FormEvent) => {
                 accept="image/*"
                 onChange={handleImageChange}
                 className="hidden"
-                disabled={isSubmitting}
+                disabled={loading}
               />
             </label>
           </div>
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Email *
           </label>
           <input
             type="email"
-            id="email"
+            name="email"
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value.trim() })}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
-            className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-            disabled={isSubmitting}
+            disabled={loading}
             placeholder="usuario@ejemplo.com"
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Contraseña * (mínimo 6 caracteres)
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Contraseña *
           </label>
-          <div className="mt-1 relative">
+          <div className="relative">
             <input
               type={showPassword ? "text" : "password"}
-              id="password"
+              name="password"
               value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              onChange={handleChange}
+              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
               minLength={6}
-              className="block w-full px-3 py-2 pr-10 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-              disabled={isSubmitting}
+              disabled={loading}
               placeholder="Mínimo 6 caracteres"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute inset-y-0 right-0 pr-3 flex items-center"
-              disabled={isSubmitting}
+              disabled={loading}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4 text-gray-400" />
@@ -314,35 +310,36 @@ const handleSubmit = async (e: React.FormEvent) => {
               )}
             </button>
           </div>
+          <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
         </div>
 
         <div>
-          <label htmlFor="full_name" className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Nombre Completo *
           </label>
           <input
             type="text"
-            id="full_name"
+            name="full_name"
             value={formData.full_name}
-            onChange={(e) => setFormData({ ...formData, full_name: e.target.value.trim() })}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
-            className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-            disabled={isSubmitting}
+            disabled={loading}
             placeholder="Nombre y apellidos"
           />
         </div>
         
         <div>
-          <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Rol *
           </label>
           <select
-            id="role"
+            name="role"
             value={formData.role}
-            onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+            onChange={handleChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
-            className="mt-1 block w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
-            disabled={isSubmitting}
+            disabled={loading}
           >
             <option value="user">Usuario</option>
             <option value="admin">Administrador</option>
@@ -351,21 +348,21 @@ const handleSubmit = async (e: React.FormEvent) => {
           </select>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex gap-3 pt-4">
           <button
             type="button"
             onClick={handleClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-            disabled={isSubmitting}
+            className="flex-1 px-4 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
+            disabled={loading}
           >
             Cancelar
           </button>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSubmitting}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center"
+            disabled={loading}
           >
-            {isSubmitting ? (
+            {loading ? (
               <>
                 <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
                 Creando...
