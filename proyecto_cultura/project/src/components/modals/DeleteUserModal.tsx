@@ -20,40 +20,67 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, user
     try {
       setIsDeleting(true);
 
-      // Usar Edge Function para eliminar usuario de forma segura
+      // Obtener sesión activa
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
         throw new Error('No hay sesión activa');
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user-admin`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            userId: user.id
-          })
-        }
-      );
+      // Configurar la URL de la Edge Function
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user-admin`;
+      
+      // Determinar qué ID enviar - priorizar auth_id
+      const userIdToSend = (user as any).auth_id || user.id;
+      
+      console.log('Calling function:', functionUrl);
+      console.log('User data:', { 
+        userId: userIdToSend, 
+        hasAuthId: !!(user as any).auth_id,
+        tableId: user.id,
+        email: user.email 
+      });
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          userId: userIdToSend
+        })
+      });
 
+      console.log('Response status:', response.status);
+      
+      // Verificar si la respuesta es OK
       if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        
         try {
-          errorData = JSON.parse(errorText);
+          const errorData = await response.json();
+          console.error('Error response:', errorData);
+          errorMessage = errorData.error || errorMessage;
+          
+          // Mostrar información de debug si está disponible
+          if (errorData.debug) {
+            console.error('Debug info:', errorData.debug);
+          }
         } catch {
-          errorData = { error: errorText };
+          // Si no se puede parsear como JSON, usar el texto
+          const errorText = await response.text();
+          console.error('Error text:', errorText);
+          errorMessage = errorText || errorMessage;
         }
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        
+        throw new Error(errorMessage);
       }
 
+      // Parsear respuesta exitosa
       const result = await response.json();
+      console.log('Success response:', result);
       
       if (!result.success) {
         throw new Error(result.error || 'Error al eliminar usuario');
@@ -65,7 +92,19 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, user
       
     } catch (err) {
       console.error('Error deleting user:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      
+      let errorMessage = 'Error desconocido';
+      
+      if (err instanceof Error) {
+        if (err.message.includes('Failed to fetch')) {
+          errorMessage = 'Error de conexión. Verifica que la Edge Function esté desplegada y configurada correctamente.';
+        } else if (err.message.includes('404')) {
+          errorMessage = 'Usuario no encontrado. Puede que ya haya sido eliminado.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
       toast.error('Error al eliminar usuario: ' + errorMessage);
     } finally {
       setIsDeleting(false);
