@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Upload, X, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, X, Eye, EyeOff, RefreshCw, Copy, Check } from 'lucide-react';
 import Modal from './Modal';
 import { UserRole } from '../../types';
 import { useSupabase } from '../../contexts/SupabaseContext';
@@ -11,6 +11,13 @@ interface AddUserModalProps {
   onUserAdded: () => void;
 }
 
+interface PasswordStrength {
+  score: number;
+  label: string;
+  color: string;
+  bgColor: string;
+}
+
 const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdded }) => {
   const { supabase } = useSupabase();
   const [loading, setLoading] = useState(false);
@@ -18,6 +25,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordCopied, setPasswordCopied] = useState(false);
   
   const [formData, setFormData] = useState({
     email: '',
@@ -25,6 +33,114 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     full_name: '',
     role: 'user' as UserRole
   });
+
+  // Generar contraseña segura
+  const generateSecurePassword = (): string => {
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numbers = '0123456789';
+    const symbols = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    
+    const allChars = lowercase + uppercase + numbers + symbols;
+    
+    let password = '';
+    
+    // Asegurar al menos un carácter de cada tipo
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += symbols[Math.floor(Math.random() * symbols.length)];
+    
+    // Completar hasta 12 caracteres con caracteres aleatorios
+    for (let i = password.length; i < 12; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+    
+    // Mezclar la contraseña
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+  };
+
+  // Evaluar fuerza de la contraseña
+  const evaluatePasswordStrength = (password: string): PasswordStrength => {
+    let score = 0;
+    
+    if (password.length >= 8) score += 1;
+    if (password.length >= 12) score += 1;
+    if (/[a-z]/.test(password)) score += 1;
+    if (/[A-Z]/.test(password)) score += 1;
+    if (/[0-9]/.test(password)) score += 1;
+    if (/[^A-Za-z0-9]/.test(password)) score += 1;
+    if (password.length >= 16) score += 1;
+    
+    if (score <= 2) {
+      return {
+        score,
+        label: 'Muy débil',
+        color: 'text-red-600',
+        bgColor: 'bg-red-500'
+      };
+    } else if (score <= 4) {
+      return {
+        score,
+        label: 'Débil',
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-500'
+      };
+    } else if (score <= 5) {
+      return {
+        score,
+        label: 'Buena',
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-500'
+      };
+    } else if (score <= 6) {
+      return {
+        score,
+        label: 'Fuerte',
+        color: 'text-green-600',
+        bgColor: 'bg-green-500'
+      };
+    } else {
+      return {
+        score,
+        label: 'Muy fuerte',
+        color: 'text-green-700',
+        bgColor: 'bg-green-600'
+      };
+    }
+  };
+
+  const passwordStrength = evaluatePasswordStrength(formData.password);
+
+  // Generar contraseña inicial al abrir el modal
+  useEffect(() => {
+    if (isOpen && !formData.password) {
+      setFormData(prev => ({
+        ...prev,
+        password: generateSecurePassword()
+      }));
+    }
+  }, [isOpen]);
+
+  const handleGeneratePassword = () => {
+    const newPassword = generateSecurePassword();
+    setFormData(prev => ({
+      ...prev,
+      password: newPassword
+    }));
+    setPasswordCopied(false);
+  };
+
+  const handleCopyPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(formData.password);
+      setPasswordCopied(true);
+      toast.success('Contraseña copiada al portapapeles');
+      setTimeout(() => setPasswordCopied(false), 2000);
+    } catch (err) {
+      toast.error('Error al copiar la contraseña');
+    }
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,6 +190,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     setImageFile(null);
     setImagePreview(null);
     setShowPassword(false);
+    setPasswordCopied(false);
     setError('');
   };
 
@@ -203,6 +320,14 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
     }));
   };
 
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      password: e.target.value
+    }));
+    setPasswordCopied(false);
+  };
+
   const handleClose = () => {
     if (!loading) {
       resetForm();
@@ -285,32 +410,84 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onUserAdde
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Contraseña *
           </label>
-          <div className="relative">
-            <input
-              type={showPassword ? "text" : "password"}
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              minLength={6}
-              disabled={loading}
-              placeholder="Mínimo 6 caracteres"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center"
-              disabled={loading}
-            >
-              {showPassword ? (
-                <EyeOff className="h-4 w-4 text-gray-400" />
-              ) : (
-                <Eye className="h-4 w-4 text-gray-400" />
-              )}
-            </button>
+          <div className="space-y-2">
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                value={formData.password}
+                onChange={handlePasswordChange}
+                className="w-full px-3 py-2 pr-20 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                required
+                minLength={6}
+                disabled={loading}
+                placeholder="Contraseña generada automáticamente"
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center space-x-1 pr-2">
+                <button
+                  type="button"
+                  onClick={handleCopyPassword}
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={loading}
+                  title="Copiar contraseña"
+                >
+                  {passwordCopied ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={loading}
+                  title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            
+            {/* Indicador de fortaleza de contraseña */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="flex space-x-1">
+                  {[1, 2, 3, 4, 5, 6, 7].map((level) => (
+                    <div
+                      key={level}
+                      className={`h-2 w-4 rounded-full ${
+                        level <= passwordStrength.score
+                          ? passwordStrength.bgColor
+                          : 'bg-gray-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className={`text-sm font-medium ${passwordStrength.color}`}>
+                  {passwordStrength.label}
+                </span>
+              </div>
+              
+              <button
+                type="button"
+                onClick={handleGeneratePassword}
+                className="flex items-center space-x-1 text-blue-600 hover:text-blue-700 text-sm font-medium transition-colors"
+                disabled={loading}
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Regenerar</span>
+              </button>
+            </div>
+            
+            <p className="text-xs text-gray-500">
+              Se genera automáticamente una contraseña segura. Puedes regenerarla o modificarla manualmente.
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
         </div>
 
         <div>
