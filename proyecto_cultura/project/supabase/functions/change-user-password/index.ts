@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('Processing password change request for user:', user.id);
+    console.log('Processing password change request for auth user:', user.id);
 
     // Obtener datos del request
     const requestBody = await req.json();
@@ -116,15 +116,28 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Solo el propio usuario o un admin puede cambiar la contraseña
-    const { data: requestingUserData } = await supabaseAdmin
+    // 🔥 CORRECCIÓN CRÍTICA: Buscar el usuario en la tabla users usando auth_id
+    const { data: requestingUserData, error: requestingUserError } = await supabaseAdmin
       .from('users')
-      .select('role')
-      .eq('id', user.id)
+      .select('role, id, email')
+      .eq('auth_id', user.id) // ✅ Usar auth_id en lugar de id
       .single();
 
-    const isAdmin = requestingUserData?.role === 'admin';
-    const isOwnPassword = user.id === userId;
+    if (requestingUserError || !requestingUserData) {
+      console.error('Requesting user not found:', requestingUserError);
+      return new Response(
+        JSON.stringify({ error: 'Requesting user not found in users table' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 404
+        }
+      );
+    }
+
+    console.log('Requesting user found:', requestingUserData);
+
+    const isAdmin = requestingUserData.role === 'admin';
+    const isOwnPassword = requestingUserData.id === userId; // Comparar con el ID de la tabla users
 
     if (!isAdmin && !isOwnPassword) {
       return new Response(
@@ -136,10 +149,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verificar que el usuario objetivo existe
+    // 🔥 CORRECCIÓN: Buscar el usuario objetivo en la tabla users Y obtener su auth_id
     const { data: targetUserData, error: userError } = await supabaseAdmin
       .from('users')
-      .select('email, id')
+      .select('email, id, auth_id') // ✅ Incluir auth_id
       .eq('id', userId)
       .single();
 
@@ -153,6 +166,23 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    if (!targetUserData.auth_id) {
+      console.error('Target user has no auth_id');
+      return new Response(
+        JSON.stringify({ error: 'User has no authentication record' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        }
+      );
+    }
+
+    console.log('Target user found:', { 
+      id: targetUserData.id, 
+      email: targetUserData.email,
+      auth_id: targetUserData.auth_id 
+    });
 
     // Verificar la contraseña actual solo si es el propio usuario
     if (isOwnPassword) {
@@ -173,11 +203,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log('Updating password for user:', userId);
+    console.log('Updating password for auth user:', targetUserData.auth_id);
 
-    // Cambiar la contraseña usando permisos administrativos
+    // 🔥 CORRECCIÓN CRÍTICA: Usar el auth_id del usuario objetivo
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
+      targetUserData.auth_id, // ✅ Usar auth_id en lugar de userId
       { password: newPassword }
     );
 
@@ -192,13 +222,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('Password updated successfully for user:', userId);
+    console.log('Password updated successfully for user:', userId, 'auth_id:', targetUserData.auth_id);
 
     return new Response(
       JSON.stringify({
         message: 'Password updated successfully',
         success: true,
-        userId: userId
+        userId: userId,
+        authId: targetUserData.auth_id
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -215,7 +246,7 @@ Deno.serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+      status: 500
       }
     );
   }
