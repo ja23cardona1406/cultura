@@ -29,3 +29,19 @@
 .animate-scaleIn {
   animation: scaleIn 0.2s ease-out;
 }
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.banner-error {
+  position: fixed;
+  top: 0;
+  width: 100%;
+  background: red;
+  color: white;
+  z-index: 1000;
+  padding: 10px;
+  text-align: center;
+}
