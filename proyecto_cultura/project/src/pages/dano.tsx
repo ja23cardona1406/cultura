@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Skull, Flame, Eye, Zap } from 'lucide-react';
+import { Settings, Shield, FileText, Clock } from 'lucide-react';
 
 interface FloatingIconProps {
   Icon: React.ComponentType<any>;
@@ -12,7 +12,7 @@ interface FloatingIconProps {
 const FloatingIcon: React.FC<FloatingIconProps> = ({ Icon, delay, duration, startX, startY }) => {
   return (
     <div
-      className="absolute opacity-20 text-red-500"
+      className="absolute opacity-30 text-blue-600"
       style={{
         left: `${startX}%`,
         top: `${startY}%`,
@@ -26,8 +26,8 @@ const FloatingIcon: React.FC<FloatingIconProps> = ({ Icon, delay, duration, star
 };
 
 const MaintenancePage: React.FC = () => {
-  const [glitchText, setGlitchText] = useState<string>('MANTENIMIENTO');
-  const [timeLeft, setTimeLeft] = useState<number>(666);
+  const [timeLeft, setTimeLeft] = useState<number>(3600); // 1 hora
+  const [pulseState, setPulseState] = useState<boolean>(true);
 
   useEffect(() => {
     // Añadir estilos CSS al head del documento
@@ -38,174 +38,199 @@ const MaintenancePage: React.FC = () => {
           transform: translateY(0px) rotate(0deg);
         }
         50% {
-          transform: translateY(-20px) rotate(10deg);
+          transform: translateY(-15px) rotate(5deg);
         }
       }
       
-      @keyframes glitch {
-        0% { transform: translate(0); }
-        20% { transform: translate(-2px, 2px); }
-        40% { transform: translate(-2px, -2px); }
-        60% { transform: translate(2px, 2px); }
-        80% { transform: translate(2px, -2px); }
-        100% { transform: translate(0); }
+      @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
       }
       
-      .glitch-text {
-        animation: glitch 0.3s infinite;
+      .gradient-bg {
+        background: linear-gradient(-45deg, #1e3a8a, #3b82f6, #1d4ed8, #2563eb);
+        background-size: 400% 400%;
+        animation: gradientShift 15s ease infinite;
       }
       
-      .animate-spin-slow {
-        animation: spin 8s linear infinite;
+      .institutional-glow {
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
       }
       
-      @keyframes pulse-glow {
+      .pulse-border {
+        animation: pulse-border 2s infinite;
+      }
+      
+      @keyframes pulse-border {
         0%, 100% {
-          box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);
+          border-color: rgba(59, 130, 246, 0.5);
         }
         50% {
-          box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+          border-color: rgba(59, 130, 246, 1);
         }
       }
     `;
     document.head.appendChild(style);
 
-    const glitchInterval = setInterval(() => {
-      const glitchChars = ['M', 'A', 'N', 'T', 'E', 'N', 'I', 'M', 'I', 'E', 'N', 'T', 'O', '█', '▓', '▒', '░'];
-      const originalText = 'MANTENIMIENTO';
-      
-      // Aplicar glitch random
-      let newText = originalText.split('').map((char, index) => {
-        return Math.random() < 0.1 ? glitchChars[Math.floor(Math.random() * glitchChars.length)] : char;
-      }).join('');
-      
-      setGlitchText(newText);
-      
-      // Restaurar texto original después de 100ms
-      setTimeout(() => setGlitchText(originalText), 100);
-    }, 2000);
-
     const countdownInterval = setInterval(() => {
-      setTimeLeft(prev => prev > 0 ? prev - 1 : 666);
+      setTimeLeft(prev => prev > 0 ? prev - 1 : 3600);
     }, 1000);
 
+    const pulseInterval = setInterval(() => {
+      setPulseState(prev => !prev);
+    }, 1500);
+
     return () => {
-      clearInterval(glitchInterval);
       clearInterval(countdownInterval);
+      clearInterval(pulseInterval);
       // Limpiar el estilo cuando el componente se desmonte
-      document.head.removeChild(style);
+      if (document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
     };
   }, []);
 
   const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="min-h-screen bg-black text-white overflow-hidden relative">
-      {/* Animated background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-red-900/20 via-black to-purple-900/20"></div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 text-slate-800 overflow-hidden relative">
+      {/* Animated background overlay */}
+      <div className="absolute inset-0 gradient-bg opacity-5"></div>
       
-      {/* Floating icons */}
-      <FloatingIcon Icon={Skull} delay={0} duration={6} startX={10} startY={20} />
-      <FloatingIcon Icon={Flame} delay={1} duration={8} startX={80} startY={30} />
-      <FloatingIcon Icon={Eye} delay={2} duration={7} startX={20} startY={70} />
-      <FloatingIcon Icon={Zap} delay={3} duration={5} startX={90} startY={60} />
-      <FloatingIcon Icon={Skull} delay={4} duration={9} startX={60} startY={10} />
-      <FloatingIcon Icon={Flame} delay={5} duration={6} startX={40} startY={80} />
+      {/* Floating institutional icons */}
+      <FloatingIcon Icon={Shield} delay={0} duration={8} startX={15} startY={25} />
+      <FloatingIcon Icon={FileText} delay={2} duration={10} startX={85} startY={20} />
+      <FloatingIcon Icon={Settings} delay={4} duration={9} startX={10} startY={75} />
+      <FloatingIcon Icon={Clock} delay={6} duration={7} startX={90} startY={70} />
+      <FloatingIcon Icon={Shield} delay={8} duration={11} startX={70} startY={15} />
+      <FloatingIcon Icon={FileText} delay={10} duration={6} startX={30} startY={80} />
 
       {/* Main content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6">
         
-        {/* Pulsating pentagram */}
+        {/* Colombian flag colors accent */}
+        <div className="mb-8 flex space-x-2">
+          <div className="w-16 h-2 bg-yellow-400 rounded"></div>
+          <div className="w-16 h-2 bg-blue-600 rounded"></div>
+          <div className="w-16 h-2 bg-red-500 rounded"></div>
+        </div>
+
+        {/* Institutional emblem placeholder */}
         <div className="mb-8 relative">
-          <div className="w-32 h-32 animate-pulse">
-            <svg viewBox="0 0 100 100" className="w-full h-full fill-red-600 drop-shadow-[0_0_20px_rgba(239,68,68,0.5)]">
-              <polygon points="50,5 61,35 85,35 67,53 78,82 50,65 22,82 33,53 15,35 39,35" />
-            </svg>
-          </div>
-          <div className="absolute inset-0 w-32 h-32 animate-spin-slow">
-            <div className="w-full h-full border-2 border-red-500/30 rounded-full"></div>
-          </div>
-        </div>
-
-        {/* Error title with glitch effect */}
-        <h1 className="text-6xl md:text-8xl font-black mb-4 text-center">
-          <span className="bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent animate-pulse">
-            ERROR
-          </span>
-        </h1>
-
-        {/* Glitch maintenance text */}
-        <h2 className="text-2xl md:text-4xl font-bold mb-8 text-center tracking-wider">
-          <span className="text-red-400 font-mono glitch-text">
-            {glitchText}
-          </span>
-        </h2>
-
-        {/* Spooky message */}
-        <div className="text-center mb-8 max-w-2xl">
-          <p className="text-lg md:text-xl text-gray-300 mb-4 leading-relaxed">
-            Las fuerzas oscuras están trabajando en las sombras...
-          </p>
-          <p className="text-md text-gray-400 mb-6">
-            La aplicación se encuentra temporalmente en el inframundo. 
-            Los demonios del código están realizando rituales de optimización.
-          </p>
-        </div>
-
-        {/* Countdown timer */}
-        <div className="bg-red-900/20 border-2 border-red-500/30 rounded-lg p-6 mb-8 backdrop-blur-sm">
-          <div className="text-center">
-            <p className="text-red-400 mb-2 font-semibold">Tiempo estimado para la resurrección:</p>
-            <div className="text-4xl font-mono text-red-300 font-bold">
-              {formatTime(timeLeft)}
+          <div className={`w-24 h-24 transition-all duration-1000 ${pulseState ? 'scale-105' : 'scale-100'}`}>
+            <div className="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg flex items-center justify-center institutional-glow">
+              <Shield size={48} className="text-white" />
             </div>
           </div>
         </div>
 
-        {/* Animated flames */}
-        <div className="flex space-x-4 mb-8">
-          {[...Array(5)].map((_, i) => (
-            <Flame 
-              key={i}
-              className="text-red-500 animate-bounce" 
-              size={32}
-              style={{
-                animationDelay: `${i * 0.2}s`,
-                animationDuration: '2s'
-              }}
-            />
-          ))}
+        {/* Main title */}
+        <h1 className="text-4xl md:text-6xl font-bold mb-4 text-center">
+          <span className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-800 bg-clip-text text-transparent">
+            MANTENIMIENTO PROGRAMADO
+          </span>
+        </h1>
+
+        {/* Subtitle */}
+        <h2 className="text-xl md:text-2xl font-semibold mb-8 text-center text-blue-700">
+          Sistema de Gestión Tributaria
+        </h2>
+
+        {/* Professional message */}
+        <div className="text-center mb-8 max-w-3xl">
+          <p className="text-lg md:text-xl text-slate-600 mb-4 leading-relaxed">
+            Estimado contribuyente, nuestros sistemas se encuentran en mantenimiento para brindarle un mejor servicio.
+          </p>
+          <p className="text-md text-slate-500 mb-6">
+            Estamos realizando actualizaciones técnicas para optimizar la plataforma y garantizar 
+            la seguridad de sus operaciones tributarias. Agradecemos su comprensión.
+          </p>
+        </div>
+
+        {/* Service status */}
+        <div className="bg-white/80 backdrop-blur-sm border-2 pulse-border rounded-lg p-6 mb-8 institutional-glow">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-3">
+              <Settings className="text-blue-600 mr-2 animate-spin" size={24} />
+              <p className="text-blue-700 font-semibold text-lg">Tiempo estimado de finalización:</p>
+            </div>
+            <div className="text-3xl font-mono text-blue-800 font-bold mb-2">
+              {formatTime(timeLeft)}
+            </div>
+            <div className="flex items-center justify-center space-x-2 text-sm text-slate-500">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>Servicios siendo restaurados</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Available services info */}
+        <div className="bg-blue-50/80 backdrop-blur-sm border border-blue-200 rounded-lg p-6 mb-8 max-w-2xl">
+          <h3 className="text-lg font-semibold text-blue-800 mb-3 text-center">Servicios Disponibles Durante el Mantenimiento</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-600">
+            <div className="flex items-center">
+              <FileText size={16} className="text-blue-600 mr-2" />
+              <span>Consulta de información general</span>
+            </div>
+            <div className="flex items-center">
+              <Shield size={16} className="text-blue-600 mr-2" />
+              <span>Línea de atención telefónica</span>
+            </div>
+            <div className="flex items-center">
+              <Clock size={16} className="text-blue-600 mr-2" />
+              <span>Horarios de atención presencial</span>
+            </div>
+            <div className="flex items-center">
+              <Settings size={16} className="text-blue-600 mr-2" />
+              <span>Formularios descargables</span>
+            </div>
+          </div>
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 mb-8">
           <button 
-            className="px-8 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 
-                     border border-red-500 rounded-lg font-semibold transition-all duration-300 
-                     hover:shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:scale-105 active:scale-95"
+            className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 
+                     text-white border border-blue-500 rounded-lg font-semibold transition-all duration-300 
+                     hover:shadow-lg hover:scale-105 active:scale-95 institutional-glow"
             onClick={() => window.location.reload()}
           >
-            Invocar Actualización
+            Verificar Estado
           </button>
           <button 
-            className="px-8 py-3 bg-transparent border-2 border-red-500 text-red-400 hover:bg-red-500/10 
-                     rounded-lg font-semibold transition-all duration-300 hover:text-red-300 
-                     hover:border-red-400 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)]"
+            className="px-8 py-3 bg-transparent border-2 border-blue-600 text-blue-700 hover:bg-blue-50 
+                     rounded-lg font-semibold transition-all duration-300 hover:text-blue-800 
+                     hover:border-blue-700"
             onClick={() => window.history.back()}
           >
-            Regresar al Plano Mortal
+            Volver
           </button>
         </div>
 
-        {/* Footer with skulls */}
-        <div className="mt-16 flex items-center space-x-4 text-gray-500">
-          <Skull size={20} />
-          <span className="text-sm font-mono">Sistema poseído temporalmente</span>
-          <Skull size={20} />
+        {/* Contact information */}
+        <div className="text-center">
+          <p className="text-sm text-slate-500 mb-2">Para consultas urgentes:</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center space-y-2 sm:space-y-0 sm:space-x-6 text-sm text-blue-700">
+            <span>📞 Línea de atención: 057(1) 307 8064</span>
+            <span>🌐 Portal web institucional</span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-12 flex items-center space-x-3 text-slate-400 text-sm">
+          <Shield size={16} />
+          <span>Sistema seguro y confiable</span>
+          <Shield size={16} />
         </div>
       </div>
     </div>
