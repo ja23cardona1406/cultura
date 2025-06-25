@@ -137,13 +137,13 @@ const MaintenancePage: React.FC = () => {
         {/* Main title */}
         <h1 className="text-4xl md:text-6xl font-bold mb-4 text-center">
           <span className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-800 bg-clip-text text-transparent">
-            MANTENIMIENTO PROGRAMADO
+            ERROR
           </span>
         </h1>
 
         {/* Subtitle */}
         <h2 className="text-xl md:text-2xl font-semibold mb-8 text-center text-blue-700">
-          Sistema de Gestión Tributaria
+          Sistema deshabilitado por falta de permisos
         </h2>
 
         {/* Professional message */}
@@ -217,14 +217,7 @@ const MaintenancePage: React.FC = () => {
           </button>
         </div>
 
-        {/* Contact information */}
-        <div className="text-center">
-          <p className="text-sm text-slate-500 mb-2">Para consultas urgentes:</p>
-          <div className="flex flex-col sm:flex-row items-center justify-center space-y-2 sm:space-y-0 sm:space-x-6 text-sm text-blue-700">
-            <span>📞 Línea de atención: 057(1) 307 8064</span>
-            <span>🌐 Portal web institucional</span>
-          </div>
-        </div>
+        
 
         {/* Footer */}
         <div className="mt-12 flex items-center space-x-3 text-slate-400 text-sm">
