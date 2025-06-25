@@ -30,7 +30,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requiredRole }) =
   if (!user) {
     console.log('Usuario no autenticado, redirigiendo a /login');
     // Guardamos la ubicación actual para redirigir después de iniciar sesión
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/MaintenancePage" state={{ from: location }} replace />;
   }
   
   // Si se requiere un rol específico y el usuario no lo tiene

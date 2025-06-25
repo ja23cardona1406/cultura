@@ -10,6 +10,7 @@ import Agreements from './pages/Agreements';
 import Activities from './pages/ActivityManagement';
 import UserManag from './pages/UserManag';
 import { useSupabaseStatus } from './hooks/useSupabaseStatus';
+import MaintenancePage from './pages/dano';
 
 const App: React.FC = () => {
   const isSupabaseDown = useSupabaseStatus();
@@ -39,6 +40,7 @@ const App: React.FC = () => {
 
         <div style={{ marginTop: isSupabaseDown ? '60px' : '0' }}>
           <Routes>
+            <Route path="/MaintenancePage" element={<MaintenancePage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
